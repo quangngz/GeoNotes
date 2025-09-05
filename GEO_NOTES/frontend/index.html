@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maps Static API Examples</title>
+  <style>
+    /* Simple responsive wrapper so the image scales on mobile */
+    .map-wrap { max-width: 800px; margin: 2rem auto; }
+    .map-wrap img { width: 100%; height: auto; display: block; border-radius: 12px; }
+    code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <h1>Google Maps Static API → HTML</h1>
+
+  <!--
+    ⚠️ Prereqs
+    1) In Google Cloud Console, enable "Maps Static API" for your project.
+    2) Create an API key and RESTRICT it to your website's HTTP referrers.
+    3) Replace YOUR_API_KEY below with your actual key.
+
+    Note: A Static Map is just an image. There is no interactivity (no drag/zoom).
+  -->
+
+  <div class="map-wrap">
+    <h2>1) Basic static map (center + zoom + one marker)</h2>
+    <img
+      alt="Melbourne CBD static map"
+      src="https://maps.googleapis.com/maps/api/staticmap?center=-37.8136,144.9631&zoom=13&size=800x400&scale=2&maptype=roadmap&markers=color:red%7C-37.8136,144.9631&key=YOUR_API_KEY"
+    />
+    <p>
+      URL built from parameters: <code>center</code>, <code>zoom</code>, <code>size</code>,
+      <code>scale</code>, <code>maptype</code>, <code>markers</code>, and <code>key</code>.
+    </p>
+  </div>
+
+  <div class="map-wrap">
+    <h2>2) Multiple markers (URL-encode pipes and spaces)</h2>
+    <img
+      alt="Multiple markers example"
+      src="https://maps.googleapis.com/maps/api/staticmap?center=-37.814,144.96332&zoom=12&size=800x400&scale=2&markers=color:blue%7Clabel:A%7C-37.811,144.964&markers=color:green%7Clabel:B%7C-37.820,144.980&markers=color:red%7Clabel:C%7C-37.825,144.955&key=YOUR_API_KEY"
+    />
+  </div>
+
+  <div class="map-wrap">
+    <h2>3) Path/route overlay (polyline)</h2>
+    <img
+      alt="Path overlay example"
+      src="https://maps.googleapis.com/maps/api/staticmap?size=800x400&scale=2&maptype=roadmap&path=color:0xFF0000FF%7Cweight:4%7C-37.820,144.970%7C-37.818,144.965%7C-37.815,144.963%7C-37.812,144.970&markers=size:mid%7Ccolor:0x0000FF%7C-37.820,144.970&markers=size:mid%7Ccolor:0x0000FF%7C-37.812,144.970&key=YOUR_API_KEY"
+    />
+  </div>
+
+  <div id="map" style="height:400px"></div>
+    <script>
+    function initMap() {
+        new google.maps.Map(document.getElementById('map'), {
+        center: { lat: -37.8136, lng: 144.9631 },
+        zoom: 13,
+        });
+    }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0
+    &callback=initMap&v=weekly" async defer></script>
+
+  <div class="map-wrap">
+    <h2>4) Programmatically build the URL (optional)</h2>
+    <p>Change fields and the image will update.</p>
+    <label>Center (lat,lng): <input id="center" value="-37.8136,144.9631"/></label>
+    <label>Zoom: <input id="zoom" type="number" min="0" max="21" value="13"/></label>
+    <label>Marker (lat,lng): <input id="marker" value="-37.8136,144.9631"/></label>
+    <button id="update">Update</button>
+
+    <img id="dynamic" alt="Dynamic URL static map" />
+
+    <script>
+      const img = document.getElementById('dynamic');
+      const key = 'YOUR_API_KEY'; // 👈 Replace and restrict via HTTP referrers in Cloud Console
+
+      function buildUrl() {
+        const center = encodeURIComponent(document.getElementById('center').value.trim());
+        const zoom = encodeURIComponent(document.getElementById('zoom').value.trim());
+        const marker = encodeURIComponent(document.getElementById('marker').value.trim());
+        const base = 'https://maps.googleapis.com/maps/api/staticmap';
+        const params = new URLSearchParams({
+          center,
+          zoom,
+          size: '800x400',
+          scale: '2',
+          maptype: 'roadmap',
+          key
+        });
+        // markers needs special encoding of pipe (|) characters -> use %7C
+        const markers = `color:red%7C${marker}`;
+        img.src = `${base}?${params.toString()}&markers=${markers}`;
+      }
+
+      document.getElementById('update').addEventListener('click', buildUrl);
+      buildUrl();
+    </script>
+  </div>
+
+  <hr />
+  <div class="map-wrap">
+    <h2>Need an interactive map instead?</h2>
+    <p>
+      Use the <strong>Maps JavaScript API</strong> (different product). Minimal drop‑in example:
+    </p>
+    <pre><code>&lt;div id="map" style="height:400px"&gt;&lt;/div&gt;
+&lt;script&gt;
+  function initMap() {
+    new google.maps.Map(document.getElementById('map'), {
+      center: { lat: -37.8136, lng: 144.9631 },
+      zoom: 13,
+    });
+  }
+&lt;/script&gt;
+&lt;script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0
+&amp;callback=initMap&amp;v=weekly" async defer&gt;&lt;/script&gt;</code></pre>
+  </div>
+
+  <!--
+    Troubleshooting quick hits:
+    - 403 / error: Enable Maps Static API; restrict key to your domain; check billing is enabled.
+    - Broken image icon: URL too long (> 16,384 chars) or wrong parameter encoding.
+    - Blurry on retina: set scale=2 (or 4) and size within limits (max 640x640 free tier, 2048x2048 with premium/enterprise; quotas apply).
+  -->
+</body>
+</html>
