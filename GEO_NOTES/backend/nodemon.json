@@ -1,0 +1,5 @@
+{
+  "ignore": ["pins.json", "*.json", "data/*"],
+  "ext": "js,mjs,cjs",
+  "watch": ["*.js", "models/*.js"]
+}
