@@ -15,8 +15,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// File-based storage (moved outside project to avoid Live Server refresh)
-const DATA_FILE = path.join(__dirname, '../../../geonotes-data.json');
+// Serve static files from frontend directory
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// File-based storage (in project root to avoid Live Server refresh)
+const DATA_FILE = path.join(__dirname, '../../pins.json');
 
 // Helper functions for file storage
 function loadPins() {
@@ -108,7 +111,7 @@ app.put("/api/pins/:id", (req, res) => {
     res.status(400).json({ message: error.message });
   }
 });
-
+ 
 // Delete a pin
 app.delete("/api/pins/:id", (req, res) => {
   try {
