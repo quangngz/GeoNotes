@@ -136,4 +136,21 @@ app.delete("/api/pins/:id", (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
