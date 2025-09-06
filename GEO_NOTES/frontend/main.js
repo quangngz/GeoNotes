@@ -47,12 +47,13 @@ async function addPin(location, existingPin = null) {
     let markerId, dbId;
     let country, region, locationName;
     if (existingPin) {
-        markerId = existingPin._id;
-        dbId = existingPin._id;
-        notes[markerId] = existingPin.note;
-        country = existingPin.country;
-        region = existingPin.region;
-        locationName = existingPin.locationName;
+        // ensure id is a string for consistent comparisons
+        markerId = existingPin._id && existingPin._id.toString ? existingPin._id.toString() : String(existingPin._id || Date.now());
+        dbId = markerId;
+        notes[markerId] = existingPin.note || '';
+        country = existingPin.country || null;
+        region = existingPin.region || null;
+        locationName = existingPin.locationName || existingPin.formatted_address || null;
         if (existingPin.note) {
             marker.setTitle('Note: ' + existingPin.note.substring(0, 50) + 
                            (existingPin.note.length > 50 ? '...' : ''));
@@ -78,8 +79,8 @@ async function addPin(location, existingPin = null) {
             });
             if (!response.ok) throw new Error('Failed to save pin');
             const savedPin = await response.json();
-            markerId = savedPin._id;
-            dbId = savedPin._id;
+            markerId = savedPin._id && savedPin._id.toString ? savedPin._id.toString() : String(savedPin._id || Date.now());
+            dbId = markerId;
         } catch (error) {
             markerId = Date.now().toString();
             dbId = null;
@@ -94,6 +95,26 @@ async function addPin(location, existingPin = null) {
 
     if (!existingPin) setTimeout(() => openNotePanel(markerId), 100);
     updateSidebar();
+}
+
+async function loadPins() {
+    try {
+        // clear existing markers before loading to avoid duplicates
+        markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
+        markers = [];
+        notes = {};
+
+        const response = await fetch(`${API_BASE_URL}/pins`);
+        if (!response.ok) throw new Error('Failed to load pins');
+        const pins = await response.json();
+        for (const pin of pins) {
+            const location = { lat: pin.latitude, lng: pin.longitude };
+            await addPin(location, pin);
+        }
+        updateSidebar();
+    } catch (error) {
+        console.error('loadPins error:', error);
+    }
 }
 
 function openNotePanel(markerId) {
@@ -219,37 +240,173 @@ document.addEventListener('click', function(event) {
 });
 
 document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('saveNoteBtn').onclick = saveNote;
-    document.getElementById('deletePinBtn').onclick = deletePin;
-    document.getElementById('closeNotePanelBtn').onclick = closeNotePanel;
+    // wire up existing buttons if present
+    const saveBtn = document.getElementById('saveNoteBtn');
+    const deleteBtn = document.getElementById('deletePinBtn');
+    const closeBtn = document.getElementById('closeNotePanelBtn');
+    if (saveBtn) saveBtn.addEventListener('click', saveNote);
+    if (deleteBtn) deleteBtn.addEventListener('click', deletePin);
+    if (closeBtn) closeBtn.addEventListener('click', closeNotePanel);
 
-// Location name search
-    const locationSearchInput = document.createElement('input');
-    locationSearchInput.id = 'locationSearch';
-    locationSearchInput.type = 'text';
-    locationSearchInput.placeholder = 'Search by location name...';
-    locationSearchInput.style = 'width:100%;margin-bottom:10px;padding:8px;border-radius:4px;border:1px solid #ccc;';
-    document.getElementById('sidebar').insertBefore(locationSearchInput, document.getElementById('pins-list'));
+    // ensure we have a container to insert search controls
+    const sidebar = document.getElementById('sidebar') || document.body;
+    const pinsList = document.getElementById('pins-list') || document.querySelector('.pins-list') || null;
+    const insertBeforeNode = pinsList || sidebar.firstChild;
 
-    locationSearchInput.addEventListener('input', async function(e) {
-        const query = e.target.value.trim();
-        if (!query) {
-            await loadPins();
+    // avoid adding twice
+    if (!document.getElementById('locationSearchWrapper')) {
+        const locationSearchDiv = document.createElement('div');
+        locationSearchDiv.id = 'locationSearchWrapper';
+        locationSearchDiv.style.display = 'flex';
+        locationSearchDiv.style.gap = '8px';
+        locationSearchDiv.style.marginBottom = '10px';
+
+        const input = document.createElement('input');
+        input.id = 'locationSearch';
+        input.type = 'text';
+        input.placeholder = 'Search by location name...';
+        input.style.flex = '1';
+        input.style.padding = '8px';
+        input.style.borderRadius = '4px';
+        input.style.border = '1px solid #ccc';
+
+        const btn = document.createElement('button');
+        btn.id = 'locationSearchBtn';
+        btn.type = 'button'; // prevent accidental form submit
+        btn.textContent = 'Search';
+        btn.style.padding = '8px 12px';
+        btn.style.borderRadius = '4px';
+        btn.style.border = 'none';
+        btn.style.background = '#4285f4';
+        btn.style.color = 'white';
+        btn.style.cursor = 'pointer';
+
+        locationSearchDiv.appendChild(input);
+        locationSearchDiv.appendChild(btn);
+
+        if (insertBeforeNode && insertBeforeNode.parentNode) {
+            insertBeforeNode.parentNode.insertBefore(locationSearchDiv, insertBeforeNode);
+        } else {
+            sidebar.insertBefore(locationSearchDiv, sidebar.firstChild);
+        }
+    }
+
+    // search function - runs on Enter or button press
+    async function searchByLocationName() {
+            const query = (document.getElementById('locationSearch') || {}).value || '';
+            const trimmed = query.trim();
+            if (!trimmed) {
+                // empty => reload all pins (loadPins already clears markers)
+                await loadPins();
+                return;
+            }
+
+            try {
+                // call backend search endpoint
+                const url = `${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(trimmed)}`;
+                console.log('Searching pins:', url);
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Search request failed: ${response.status}`);
+                const pins = await response.json();
+
+                // clear existing markers from map and local state
+                markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
+                markers = [];
+                notes = {};
+
+                // add returned pins as existing pins (addPin will set notes and markers)
+                for (const pin of pins) {
+                    const location = { lat: pin.latitude, lng: pin.longitude };
+                    // coerce id inside addPin
+                    await addPin(location, pin);
+                }
+
+                // show only the search results in the sidebar (don't call updateSidebar here,
+                // because updateSidebar would re-render all markers and overwrite the search list)
+                showLocationNames(pins);
+            } catch (err) {
+                console.error('Error during location search:', err);
+            }
+        }
+
+    // display matching location names in the sidebar container
+    function showLocationNames(pins) {
+        const container = document.getElementById('pins-container') || document.querySelector('#pins-list') || document.createElement('div');
+        // if pins-container not present, create it under #pins-list
+        if (!document.getElementById('pins-container')) {
+            const pinsListEl = document.getElementById('pins-list');
+            if (pinsListEl) {
+                const created = document.createElement('div');
+                created.id = 'pins-container';
+                pinsListEl.appendChild(created);
+            }
+        }
+
+        const target = document.getElementById('pins-container');
+        if (!target) return;
+        target.innerHTML = '';
+
+        if (!pins || pins.length === 0) {
+            target.innerHTML = '<div class="no-pins">No matching locations found.</div>';
             return;
         }
-        try {
-            const response = await fetch(`${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(query)}`);
-            if (!response.ok) throw new Error('Failed to search pins');
-            const pins = await response.json();
-            // Remove existing markers
-            markers.forEach(m => m.marker.setMap(null));
-            markers = [];
-            notes = {};
-            for (const pin of pins) {
-                const location = { lat: pin.latitude, lng: pin.longitude };
-                await addPin(location, pin);
+
+        pins.forEach(pin => {
+            const div = document.createElement('div');
+            div.className = 'pin-item';
+            const locationText = pin.locationName || `${pin.latitude.toFixed(4)}, ${pin.longitude.toFixed(4)}`;
+            const noteText = pin.note || 'No note added';
+            const dateText = pin.createdAt ? new Date(pin.createdAt).toLocaleDateString() : '';
+
+            div.innerHTML = `
+                <div class="pin-location">📍 ${locationText}</div>
+                <div class="pin-note">${escapeHtml(noteText)}</div>
+                <div class="pin-date">${dateText}</div>
+                <div style="font-size:11px;color:#888;">${pin.region ? pin.region + ', ' : ''}${pin.country || ''}</div>
+            `;
+
+            div.addEventListener('click', () => {
+                // center map and open note panel for this pin
+                if (map && typeof map.panTo === 'function') {
+                    map.panTo({ lat: pin.latitude, lng: pin.longitude });
+                    map.setZoom && map.setZoom(15);
+                }
+                // open the note panel for pin._id (backend must return _id)
+                if (pin._id) {
+                    openNotePanel(pin._id);
+                } else {
+                    // fallback: try to find the marker by coordinates and open its panel
+                    const m = markers.find(mk => {
+                        try {
+                            const pos = mk.marker.getPosition();
+                            return pos && Math.abs(pos.lat() - pin.latitude) < 1e-6 && Math.abs(pos.lng() - pin.longitude) < 1e-6;
+                        } catch (e) { return false; }
+                    });
+                    if (m) openNotePanel(m.id);
+                }
+            });
+
+            target.appendChild(div);
+        });
+    }
+
+    // helper: escape HTML for safety
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, function (s) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[s];
+        });
+    }
+
+    // wire up button and Enter key to trigger search
+    const searchInput = document.getElementById('locationSearch');
+    const searchBtn = document.getElementById('locationSearchBtn');
+    if (searchBtn) searchBtn.addEventListener('click', searchByLocationName);
+    if (searchInput) {
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchByLocationName();
             }
-            updateSidebar();
-        } catch (error) {}
-    });
+        });
+    }
 });
