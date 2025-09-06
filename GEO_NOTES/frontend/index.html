@@ -4,449 +4,55 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GeoNotes - Interactive Map</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      display: flex;
-      height: 100vh;
-      background: #f8f9fa;
-    }
-
-    #map {
-      flex: 2;
-      height: 100%;
-    }
-
-    #sidebar {
-      flex: 1;
-      padding: 20px;
-      background: #f8f9fa;
-      overflow-y: auto;
-      border-left: 3px solid #ddd;
-      max-width: 400px;
-      min-width: 300px;
-    }
-
-    #sidebar h1 {
-      text-align: center;
-      color: #333;
-      margin-top: 0;
-      margin-bottom: 20px;
-      font-size: 1.8rem;
-    }
-
-    .instructions {
-      background: #e3f2fd;
-      padding: 15px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      border: 1px solid #bbdefb;
-      text-align: center;
-    }
-
-    .instructions p {
-      margin: 0;
-      color: #1565c0;
-      font-size: 14px;
-      font-weight: 500;
-    }
-
-    #pins-list {
-      background: white;
-      border-radius: 8px;
-      border: 1px solid #e0e0e0;
-      max-height: calc(100vh - 200px);
-      overflow-y: auto;
-    }
-
-    .pin-item {
-      padding: 15px;
-      border-bottom: 1px solid #f0f0f0;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
-
-    .pin-item:hover {
-      background-color: #f5f5f5;
-    }
-
-    .pin-item:last-child {
-      border-bottom: none;
-    }
-
-    .pin-location {
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 5px;
-      font-size: 14px;
-    }
-
-    .pin-note {
-      color: #666;
-      font-size: 13px;
-      line-height: 1.4;
-      word-wrap: break-word;
-    }
-
-    .pin-note.empty {
-      color: #999;
-      font-style: italic;
-    }
-
-    .pin-date {
-      color: #999;
-      font-size: 11px;
-      margin-top: 5px;
-    }
-
-    .no-pins {
-      text-align: center;
-      padding: 40px 20px;
-      color: #999;
-      font-style: italic;
-    }
-
-    .pins-header {
-      background: #4285f4;
-      color: white;
-      padding: 15px;
-      margin: 0 -1px;
-      border-radius: 8px 8px 0 0;
-      font-weight: 600;
-      font-size: 16px;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <!-- Map -->
   <div id="map"></div>
   
   <!-- Sidebar -->
-  <div id="sidebar">
+  <!-- <div id="sidebar">
     <h1>🗺️ GeoNotes</h1>
-    
     <div class="instructions">
       <p><strong>Click anywhere on the map to drop a pin and add a note!</strong></p>
     </div>
-
     <div id="pins-list">
       <div class="pins-header">📍 Your Pins</div>
       <div id="pins-container">
         <div class="no-pins">No pins yet. Click on the map to add your first pin!</div>
       </div>
     </div>
-  </div>
+  </div> -->
     
-    <!-- Notes Panel -->
-    <div id="notesPanel" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                                background: white; border: 2px solid #ccc; border-radius: 10px; padding: 20px; 
-                                box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1000; width: 400px;">
-        <h3>Add Note</h3>
-        <textarea id="noteText" placeholder="Enter your note here..." rows="4" 
-                  style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px;"></textarea>
-        <div style="text-align: right;">
-            <button onclick="saveNote()" style="background: #4285f4; color: white; padding: 8px 16px; border: none; border-radius: 4px; margin-right: 8px; cursor: pointer;">Save</button>
-            <button onclick="deletePin()" style="background: #dc3545; color: white; padding: 8px 16px; border: none; border-radius: 4px; margin-right: 8px; cursor: pointer;">Delete Pin</button>
-            <button onclick="closeNotePanel()" style="background: #ccc; color: black; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
+
+  <!-- ...existing code... -->
+    <div id="sidebar">
+    <h1>🗺️ GeoNotes</h1>
+    <div class="instructions">
+        <p><strong>Click anywhere on the map to drop a pin and add a note!</strong></p>
+    </div>
+    <div id="pins-list">
+        <div class="pins-header">📍 Your Pins</div>
+        <div id="pins-container">
+        <div class="no-pins">No pins yet. Click on the map to add your first pin!</div>
         </div>
     </div>
+    </div>
+    <!-- ...existing code... -->
 
-    <script>
-    let map;
-    let markers = [];
-    let notes = {};
-    let currentMarker = null;
-    const API_BASE_URL = 'http://localhost:3001/api';
-
-    function initMap() {
-        map = new google.maps.Map(document.getElementById('map'), {
-            center: { lat: -37.8136, lng: 144.9631 },
-            zoom: 13,
-        });
-
-        // Add click listener to map for adding pins
-        map.addListener('click', function(event) {
-            addPin(event.latLng);
-        });
-
-        // Load existing pins from database
-        loadPins();
-    }
-
-    async function addPin(location, existingPin = null) {
-        const marker = new google.maps.Marker({
-            position: location,
-            map: map,
-            title: 'Click to add/edit note',
-            animation: existingPin ? null : google.maps.Animation.DROP
-        });
-
-        let markerId, dbId;
-        
-        if (existingPin) {
-            // Loading existing pin from database
-            markerId = existingPin._id;
-            dbId = existingPin._id;
-            notes[markerId] = existingPin.note;
-            
-            // Update marker title if there's a note
-            if (existingPin.note) {
-                marker.setTitle('Note: ' + existingPin.note.substring(0, 50) + 
-                               (existingPin.note.length > 50 ? '...' : ''));
-            }
-        } else {
-            // Creating new pin - save to database first
-            try {
-                const response = await fetch(`${API_BASE_URL}/pins`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        latitude: location.lat(),
-                        longitude: location.lng(),
-                        note: ''
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Failed to save pin');
-                }
-                
-                const savedPin = await response.json();
-                markerId = savedPin._id;
-                dbId = savedPin._id;
-                console.log('Pin saved to database:', savedPin);
-            } catch (error) {
-                console.error('Error saving pin:', error);
-                // Fallback to local storage
-                markerId = Date.now().toString();
-                dbId = null;
-            }
-        }
-
-        markers.push({ id: markerId, marker: marker, dbId: dbId });
-        
-        // Add click listener to marker for editing notes
-        marker.addListener('click', function(event) {
-            try {
-                // Stop event propagation to prevent map click
-                if (event && event.stop) {
-                    event.stop();
-                }
-                console.log('Marker clicked:', markerId);
-                openNotePanel(markerId);
-            } catch (error) {
-                console.error('Error in marker click handler:', error);
-            }
-        });
-
-        // Automatically open note panel for new pins (not existing ones)
-        if (!existingPin) {
-            setTimeout(() => {
-                openNotePanel(markerId);
-            }, 100);
-        }
-        
-        // Update sidebar to show new pin
-        updateSidebar();
-    }
-
-    function openNotePanel(markerId) {
-        currentMarker = markerId;
-        const existingNote = notes[markerId] || '';
-        document.getElementById('noteText').value = existingNote;
-        document.getElementById('notesPanel').style.display = 'block';
-    }
-
-    function closeNotePanel() {
-        document.getElementById('notesPanel').style.display = 'none';
-        document.getElementById('noteText').value = '';
-        currentMarker = null;
-    }
-
-    async function saveNote() {
-        const noteText = document.getElementById('noteText').value.trim();
-        if (currentMarker) {
-            const markerObj = markers.find(m => m.id === currentMarker);
-            
-            if (markerObj && markerObj.dbId) {
-                // Save to database
-                try {
-                    const response = await fetch(`${API_BASE_URL}/pins/${markerObj.dbId}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            note: noteText
-                        })
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error('Failed to update note');
-                    }
-                    
-                    const updatedPin = await response.json();
-                    console.log('Note updated in database:', updatedPin);
-                } catch (error) {
-                    console.error('Error updating note:', error);
-                }
-            }
-            
-            // Update local storage
-            notes[currentMarker] = noteText;
-            
-            // Update marker title to show it has a note
-            if (markerObj && noteText) {
-                markerObj.marker.setTitle('Note: ' + noteText.substring(0, 50) + (noteText.length > 50 ? '...' : ''));
-            } else if (markerObj) {
-                markerObj.marker.setTitle('Click to add/edit note');
-            }
-            
-            console.log('Note saved for marker:', currentMarker, 'Note:', noteText);
-        }
-        closeNotePanel();
-        
-        // Update sidebar to reflect note changes
-        updateSidebar();
-    }
-
-    async function deletePin() {
-        if (!currentMarker) return;
-        
-        const markerObj = markers.find(m => m.id === currentMarker);
-        if (!markerObj) return;
-        
-        // Confirm deletion
-        if (!confirm('Are you sure you want to delete this pin?')) {
-            return;
-        }
-        
-        try {
-            // Delete from database if it has a database ID
-            if (markerObj.dbId) {
-                const response = await fetch(`${API_BASE_URL}/pins/${markerObj.dbId}`, {
-                    method: 'DELETE'
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Failed to delete pin from database');
-                }
-                
-                console.log('Pin deleted from database');
-            }
-            
-            // Remove marker from map
-            markerObj.marker.setMap(null);
-            
-            // Remove from local arrays
-            markers = markers.filter(m => m.id !== currentMarker);
-            delete notes[currentMarker];
-            
-            console.log('Pin removed from map');
-            closeNotePanel();
-            
-            // Update sidebar to remove deleted pin
-            updateSidebar();
-            
-        } catch (error) {
-            console.error('Error deleting pin:', error);
-            alert('Failed to delete pin. Please try again.');
-        }
-    }
-
-    function updateSidebar() {
-        const container = document.getElementById('pins-container');
-        if (markers.length === 0) {
-            container.innerHTML = '<div class="no-pins">No pins yet. Click on the map to add your first pin!</div>';
-            return;
-        }
-
-        container.innerHTML = '';
-        markers.forEach(markerObj => {
-            const pin = {
-                id: markerObj.id,
-                note: notes[markerObj.id] || '',
-                position: markerObj.marker.getPosition(),
-                createdAt: new Date().toISOString() // Placeholder for display
-            };
-
-            const pinItem = document.createElement('div');
-            pinItem.className = 'pin-item';
-            pinItem.onclick = () => focusOnPin(markerObj);
-
-            const location = `${pin.position.lat().toFixed(4)}, ${pin.position.lng().toFixed(4)}`;
-            const noteText = pin.note || 'No note added';
-            const noteClass = pin.note ? '' : ' empty';
-
-            pinItem.innerHTML = `
-                <div class="pin-location">📍 ${location}</div>
-                <div class="pin-note${noteClass}">${noteText}</div>
-                <div class="pin-date">${new Date().toLocaleDateString()}</div>
-            `;
-
-            container.appendChild(pinItem);
-        });
-    }
-
-    function focusOnPin(markerObj) {
-        const position = markerObj.marker.getPosition();
-        
-        // Center the map on the pin and zoom in
-        map.setCenter(position);
-        map.setZoom(16);
-        
-        // Add bounce animation to the marker
-        markerObj.marker.setAnimation(google.maps.Animation.BOUNCE);
-        setTimeout(() => {
-            markerObj.marker.setAnimation(null);
-        }, 2000);
-        
-        // Open the note panel for this pin
-        setTimeout(() => {
-            openNotePanel(markerObj.id);
-        }, 500);
-    }
-
-    async function loadPins() {
-        try {
-            const response = await fetch(`${API_BASE_URL}/pins`);
-            if (!response.ok) {
-                throw new Error('Failed to load pins');
-            }
-            
-            const pins = await response.json();
-            console.log('Loaded pins from database:', pins);
-            
-            // Add each pin to the map
-            for (const pin of pins) {
-                const location = { lat: pin.latitude, lng: pin.longitude };
-                await addPin(location, pin);
-            }
-            
-            // Update sidebar after loading all pins
-            updateSidebar();
-        } catch (error) {
-            console.error('Error loading pins:', error);
-            // Don't refresh page on error, just log it
-        }
-    }
-
-    // Close panel when clicking outside (but not on map markers)
-    document.addEventListener('click', function(event) {
-        const panel = document.getElementById('notesPanel');
-        const mapDiv = document.getElementById('map');
-        
-        if (panel.style.display === 'block' && 
-            !panel.contains(event.target) && 
-            !mapDiv.contains(event.target)) {
-            closeNotePanel();
-        }
-    });
-    </script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0&callback=initMap&v=weekly" async defer></script>
+  <!-- Notes Panel -->
+  <div id="notesPanel" style="display: none;">
+    <h3>Add Note</h3>
+    <textarea id="noteText" placeholder="Enter your note here..." rows="4"></textarea>
+    <div style="text-align: right;">
+      <button id="saveNoteBtn">Save</button>
+      <button id="deletePinBtn">Delete Pin</button>
+      <button id="closeNotePanelBtn">Cancel</button>
+    </div>
   </div>
+
+
+  <script src="main.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0&callback=initMap&v=weekly" async defer></script>
 </body>
 </html>
