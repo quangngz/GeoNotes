@@ -21,6 +21,7 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 // File-based storage (in project root to avoid Live Server refresh)
 const DATA_FILE = path.join(__dirname, '../../pins.json');
 
+
 // Helper functions for file storage
 function loadPins() {
   try {
@@ -112,6 +113,7 @@ app.put("/api/pins/:id", (req, res) => {
   }
 });
  
+ 
 // Delete a pin
 app.delete("/api/pins/:id", (req, res) => {
   try {
@@ -137,6 +139,23 @@ app.delete("/api/pins/:id", (req, res) => {
 // Start server
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
 
 // Graceful shutdown handling
 process.on('SIGTERM', () => {
