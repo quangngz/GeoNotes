@@ -1,187 +1,156 @@
-// server.js - Updated backend to support region data
-const express = require('express');
-const cors = require('cors');
-const { MongoClient, ObjectId } = require('mongodb');
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config();
 const app = express();
-const PORT = process.env.PORT || 3001;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/mapnotes';
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-let db;
+// Serve static files from frontend directory
+app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Connect to MongoDB
-MongoClient.connect(MONGODB_URI)
-  .then(client => {
-    console.log('Connected to MongoDB');
-    db = client.db('mapnotes');
-  })
-  .catch(error => console.error('MongoDB connection error:', error));
+// File-based storage (in project root to avoid Live Server refresh)
+const DATA_FILE = path.join(__dirname, '../../pins.json');
 
-// Updated Pin schema with region support
-const pinSchema = {
-  latitude: 'number',
-  longitude: 'number',
-  note: 'string',
-  country: 'string',    // New field
-  region: 'string',     // New field
-  createdAt: 'date',
-  updatedAt: 'date'
-};
+// Helper functions for file storage
+function loadPins() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const data = fs.readFileSync(DATA_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error loading pins:', error);
+  }
+  return [];
+}
+
+function savePins(pins) {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(pins, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error saving pins:', error);
+    return false;
+  }
+}
+
+console.log("File-based storage initialized");
+
+// Routes
+app.get("/", (req, res) => {
+  res.send("GeoNotes API is running...");
+});
 
 // Get all pins
-app.get('/api/pins/search', async (req, res) => {
+app.get("/api/pins", (req, res) => {
   try {
-    const { region, country, text, locationName } = req.query;
-    const searchQuery = {};
-    
-    if (region) {
-      searchQuery.region = new RegExp(region, 'i');
-    }
-    if (country) {
-      searchQuery.country = new RegExp(country, 'i');
-    }
-    if (text) {
-      searchQuery.note = new RegExp(text, 'i');
-    }
-    if (locationName) {
-      searchQuery.locationName = new RegExp(locationName, 'i');
-    }
-    
-    const pins = await db.collection('pins').find(searchQuery).toArray();
+    const pins = loadPins();
     res.json(pins);
   } catch (error) {
-    console.error('Error searching pins:', error);
-    res.status(500).json({ error: 'Failed to search pins' });
+    res.status(500).json({ message: error.message });
   }
 });
 
 // Create a new pin
-app.post('/api/pins', async (req, res) => {
+app.post("/api/pins", (req, res) => {
   try {
-    const { latitude, longitude, note, country, region } = req.body;
+    const { latitude, longitude, note } = req.body;
     
-    const pin = {
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
+    const pins = loadPins();
+    const newPin = {
+      _id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      latitude,
+      longitude,
       note: note || '',
-      country: country || null,
-      region: region || null,
-      createdAt: new Date(),
-      updatedAt: new Date()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
+
+    pins.push(newPin);
     
-    const result = await db.collection('pins').insertOne(pin);
-    const savedPin = await db.collection('pins').findOne({ _id: result.insertedId });
-    
-    res.status(201).json(savedPin);
+    if (savePins(pins)) {
+      res.status(201).json(newPin);
+    } else {
+      res.status(500).json({ message: "Failed to save pin" });
+    }
   } catch (error) {
-    console.error('Error creating pin:', error);
-    res.status(500).json({ error: 'Failed to create pin' });
+    res.status(400).json({ message: error.message });
   }
 });
 
-// Update a pin
-app.put('/api/pins/:id', async (req, res) => {
+// Update a pin's note
+app.put("/api/pins/:id", (req, res) => {
   try {
-    const { id } = req.params;
-    const { note, country, region } = req.body;
+    const { note } = req.body;
+    const pins = loadPins();
+    const pinIndex = pins.findIndex(pin => pin._id === req.params.id);
     
-    const updateData = {
-      updatedAt: new Date()
-    };
-    
-    if (note !== undefined) updateData.note = note;
-    if (country !== undefined) updateData.country = country;
-    if (region !== undefined) updateData.region = region;
-    
-    const result = await db.collection('pins').updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updateData }
-    );
-    
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ error: 'Pin not found' });
+    if (pinIndex === -1) {
+      return res.status(404).json({ message: "Pin not found" });
     }
     
-    const updatedPin = await db.collection('pins').findOne({ _id: new ObjectId(id) });
-    res.json(updatedPin);
+    pins[pinIndex].note = note;
+    pins[pinIndex].updatedAt = new Date().toISOString();
+    
+    if (savePins(pins)) {
+      res.json(pins[pinIndex]);
+    } else {
+      res.status(500).json({ message: "Failed to update pin" });
+    }
   } catch (error) {
-    console.error('Error updating pin:', error);
-    res.status(500).json({ error: 'Failed to update pin' });
+    res.status(400).json({ message: error.message });
   }
 });
-
+ 
 // Delete a pin
-app.delete('/api/pins/:id', async (req, res) => {
+app.delete("/api/pins/:id", (req, res) => {
   try {
-    const { id } = req.params;
-    const result = await db.collection('pins').deleteOne({ _id: new ObjectId(id) });
+    const pins = loadPins();
+    const pinIndex = pins.findIndex(pin => pin._id === req.params.id);
     
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: 'Pin not found' });
+    if (pinIndex === -1) {
+      return res.status(404).json({ message: "Pin not found" });
     }
     
-    res.json({ message: 'Pin deleted successfully' });
+    pins.splice(pinIndex, 1);
+    
+    if (savePins(pins)) {
+      res.json({ message: "Pin deleted successfully" });
+    } else {
+      res.status(500).json({ message: "Failed to delete pin" });
+    }
   } catch (error) {
-    console.error('Error deleting pin:', error);
-    res.status(500).json({ error: 'Failed to delete pin' });
+    res.status(400).json({ message: error.message });
   }
 });
 
-// New endpoint: Search pins by region
-app.get('/api/pins/search', async (req, res) => {
-  try {
-    const { region, country, text } = req.query;
-    const searchQuery = {};
-    
-    if (region) {
-      searchQuery.region = new RegExp(region, 'i');
-    }
-    
-    if (country) {
-      searchQuery.country = new RegExp(country, 'i');
-    }
-    
-    if (text) {
-      searchQuery.note = new RegExp(text, 'i');
-    }
-    
-    const pins = await db.collection('pins').find(searchQuery).toArray();
-    res.json(pins);
-  } catch (error) {
-    console.error('Error searching pins:', error);
-    res.status(500).json({ error: 'Failed to search pins' });
-  }
+// Start server
+const PORT = process.env.PORT || 5000;
+const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
 
-// New endpoint: Get unique regions and countries
-app.get('/api/regions', async (req, res) => {
-  try {
-    const regions = await db.collection('pins').aggregate([
-      {
-        $group: {
-          _id: null,
-          countries: { $addToSet: "$country" },
-          regions: { $addToSet: "$region" }
-        }
-      }
-    ]).toArray();
-    
-    const result = regions[0] || { countries: [], regions: [] };
-    // Filter out null values
-    result.countries = result.countries.filter(c => c !== null);
-    result.regions = result.regions.filter(r => r !== null);
-    
-    res.json(result);
-  } catch (error) {
-    console.error('Error fetching regions:', error);
-    res.status(500).json({ error: 'Failed to fetch regions' });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
