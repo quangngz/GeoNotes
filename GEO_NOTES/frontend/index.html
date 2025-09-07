@@ -5,25 +5,149 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GeoNotes - Interactive Map</title>
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* AUTH SCREEN */
+    #auth-screen {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #eef2f7, #f8fafc);
+      z-index: 9999;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    .auth-card {
+      width: min(420px, 92vw);
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.12);
+      padding: 20px;
+    }
+    .auth-card h1 { margin: 0 0 .5rem 0; font-size: 1.4rem; }
+    .muted { color: #6b7280; font-size: .9rem; margin-bottom: .75rem; }
+    .tabs { display:flex; gap:8px; margin:.5rem 0 1rem; }
+    .tab-btn {
+      flex:1; padding:.5rem .75rem; border:1px solid #e5e7eb; background:#f9fafb;
+      border-radius:8px; cursor:pointer; text-align:center;
+    }
+    .tab-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
+    .auth-form label { display:block; margin:.5rem 0 .25rem; color:#374151; }
+    .auth-form input {
+      width:100%; padding:.55rem .6rem; border:1px solid #e5e7eb; border-radius:8px;
+    }
+    .auth-actions { margin-top:.75rem; display:flex; gap:8px; justify-content:flex-end; }
+    .btn { padding:.55rem .8rem; border-radius:8px; border:1px solid #d1d5db; cursor:pointer; }
+    .btn-primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+    .error { color:#b91c1c; font-size:.9rem; margin-top:.5rem; min-height:1.2em; }
+    .auth-hidden { display:none !important; }
+
+    /* Ensure app content is hidden until auth resolved */
+    body.auth-pending #map,
+    body.auth-pending #sidebar {
+      visibility: hidden;
+    }
+  </style>
 </head>
-<body>
+<body class="auth-pending">
+  <!-- AUTH OVERLAY -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h1>Welcome to GeoNotes</h1>
+      <div class="muted">Sign in to start dropping pins and writing notes.</div>
+
+      <div class="tabs">
+        <button id="tab-login" class="tab-btn active" type="button">Login</button>
+        <button id="tab-signup" class="tab-btn" type="button">Sign up</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>Email</label>
+        <input name="email" type="email" required />
+        <label>Password</label>
+        <input name="password" type="password" required />
+        <div class="auth-actions">
+          <button class="btn btn-primary" type="submit">Login</button>
+        </div>
+        <div id="login-error" class="error"></div>
+      </form>
+
+      <form id="signup-form" class="auth-form auth-hidden">
+        <label>Email</label>
+        <input name="email" type="email" required />
+        <label>Password</label>
+        <input name="password" type="password" required />
+        <div class="auth-actions">
+          <button class="btn btn-primary" type="submit">Create account</button>
+        </div>
+        <div id="signup-error" class="error"></div>
+      </form>
+    </div>
+  </div>
+
+  
+
   <!-- Map -->
   <div id="map"></div>
+
   
-  <!-- ...existing code... -->
-    <div id="sidebar">
+
+  <!-- Sidebar -->
+  <div id="sidebar">
     <h1>🗺️ GeoNotes</h1>
     <div class="instructions">
-        <p><strong>Click anywhere on the map to drop a pin and add a note!</strong></p>
+      <p><strong>Click anywhere on the map to drop a pin and add a note!</strong></p>
     </div>
+
+    <!-- Share box -->
+    <div id="share-box" style="margin:10px 0; padding:10px; border:1px solid #e5e7eb; border-radius:8px;">
+      <div style="font-weight:600; margin-bottom:6px;">Share your map</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input id="shareEmail" type="email" placeholder="friend@example.com"
+              style="flex:1; padding:8px; border:1px solid #ddd; border-radius:6px;" />
+
+        <select id="shareRole" style="padding:8px; border:1px solid #ddd; border-radius:6px;">
+          <option value="viewer">Viewer</option>
+          <option value="editor">Editor</option>
+        </select>
+
+        <button id="shareBtn" style="padding:8px 12px; border:none; border-radius:6px; background:#2563eb; color:#fff; cursor:pointer;">
+          Share
+        </button>
+      </div>
+      <div id="shareMsg" style="margin-top:6px; font-size:12px; color:#2563eb;"></div>
+    </div>
+
+    <!-- Shared-with list -->
+    <div id="shared-with" style="margin:10px 0; padding:10px; border:1px solid #e5e7eb; border-radius:8px;">
+      <div style="font-weight:600; margin-bottom:6px;">Shared with</div>
+      <div id="sharedWithList" class="muted" style="font-size:14px;">No one yet.</div>
+    </div>
+
+    <!-- Map selector -->
+    <div id="map-select" style="margin:10px 0;">
+      <label style="font-size:14px; color:#374151;">Viewing</label>
+      <select id="mapChooser" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+        <option value="self">My Pins</option>
+        <!-- Shared maps will be injected here -->
+      </select>
+    </div>
+
     <div id="pins-list">
-        <div class="pins-header">📍 Your Pins</div>
-        <div id="pins-container">
+      <div class="pins-header" id="pins-header">📍 Your Pins</div>
+      <div id="pins-container">
         <div class="no-pins">No pins yet. Click on the map to add your first pin!</div>
-        </div>
+      </div>
     </div>
+
+    <div id="account-bar" style="display:none; padding:8px 16px; background:#f3f4f6;
+          border-bottom:1px solid #e5e7eb; font-family:system-ui, sans-serif;
+          display:flex; justify-content:space-between; align-items:center;">
+        <div id="account-info" style="color:#374151;"></div>
+        <button id="logoutBtn" style="padding:6px 12px; background:#dc2626; color:white;
+                border:none; border-radius:6px; cursor:pointer;">
+          Logout
+        </button>
     </div>
-    <!-- ...existing code... -->
+  </div>
 
   <!-- Notes Panel -->
   <div id="notesPanel" style="display: none;">
@@ -34,10 +158,21 @@
       <button id="deletePinBtn">Delete Pin</button>
       <button id="closeNotePanelBtn">Cancel</button>
     </div>
+
+    
   </div>
 
+  
 
+  <!-- Your existing JS map logic -->
   <script src="main.js"></script>
+
+  <!-- Auth logic (tiny, self-contained) -->
+  <script>
+    
+  </script>
+
+  <!-- Google Maps (unchanged; your main.js provides initMap or listeners) -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0&callback=initMap&v=weekly" async defer></script>
 </body>
 </html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GeoNotes - Interactive Map</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Map -->
+  <div id="map"></div>
+  
+  <!-- ...existing code... -->
+    <div id="sidebar">
+    <h1>🗺️ GeoNotes</h1>
+    <div class="instructions">
+        <p><strong>Click anywhere on the map to drop a pin and add a note!</strong></p>
+    </div>
+    <div id="pins-list">
+        <div class="pins-header">📍 Your Pins</div>
+        <div id="pins-container">
+        <div class="no-pins">No pins yet. Click on the map to add your first pin!</div>
+        </div>
+    </div>
+    </div>
+    <!-- ...existing code... -->
+
+  <!-- Notes Panel -->
+  <div id="notesPanel" style="display: none;">
+    <h3>Add Note</h3>
+    <textarea id="noteText" placeholder="Enter your note here..." rows="4"></textarea>
+    <div style="text-align: right;">
+      <button id="saveNoteBtn">Save</button>
+      <button id="deletePinBtn">Delete Pin</button>
+      <button id="closeNotePanelBtn">Cancel</button>
+    </div>
+  </div>
+
+
+  <script src="index.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0&callback=initMap&v=weekly" async defer></script>
+</body>
+</html>

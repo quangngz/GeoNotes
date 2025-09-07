@@ -1,26 +1,169 @@
 // Remove the duplicate addPin and updateSidebar functions.
 // Keep only the versions that include country/region/locationName support and sidebar improvements.
-
 let map;
 let markers = [];
 let notes = {};
 let currentMarker = null;
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = '/api';
 const GOOGLE_API_KEY = 'AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0'; // Use your key
 
-window.initMap = function() {
-    map = new google.maps.Map(document.getElementById('map'), {
-        center: { lat: -37.8136, lng: 144.9631 },
-        zoom: 13,
-    });
+const authScreen = document.getElementById('auth-screen');
+const tabLogin   = document.getElementById('tab-login');
+const tabSignup  = document.getElementById('tab-signup');
+const loginForm  = document.getElementById('login-form');
+const signupForm = document.getElementById('signup-form');
+const loginErr   = document.getElementById('login-error');
+const signupErr  = document.getElementById('signup-error');
 
-    map.addListener('click', function(event) {
-        addPin(event.latLng);
-    });
+const accountBar  = document.getElementById('account-bar');
+const accountInfo = document.getElementById('account-info');
+const logoutBtn   = document.getElementById('logoutBtn');
 
-    loadPins();
+let sharedOwnersById = new Map();
+
+// what I'm currently looking at
+let currentView = { type: "self", ownerId: null, role: "editor" };
+
+tabLogin.onclick = () => {
+    tabLogin.classList.add('active'); tabSignup.classList.remove('active');
+    loginForm.classList.remove('auth-hidden'); signupForm.classList.add('auth-hidden');
+    loginErr.textContent = '';
+};
+tabSignup.onclick = () => {
+    tabSignup.classList.add('active'); tabLogin.classList.remove('active');
+    signupForm.classList.remove('auth-hidden'); loginForm.classList.add('auth-hidden');
+    signupErr.textContent = '';
 };
 
+async function me() {
+    try {
+    const r = await fetch('/api/me', { credentials: 'same-origin' });
+    return r.ok ? r.json() : null;
+    } catch (_) { return null; }
+}
+async function apiLogin(body) {
+    const r = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Login failed');
+    return r.json();
+}
+async function apiSignup(body) {
+    const r = await fetch('/api/register', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Signup failed');
+    return r.json();
+}
+
+async function hydrateAuth() {
+    const user = await me();
+    if (user && user.email) {
+        authScreen.style.display = 'none';
+        document.body.classList.remove('auth-pending');
+        accountBar.style.display = 'flex';
+        accountInfo.textContent = `Signed in as ${user.email}`;
+
+
+        // refresh the list of people I’ve shared with
+        try { renderOwnedShares(await listOwnedShares()); } catch (_) {}
+
+        try {
+            const sharedOwners = await listSharedMaps();
+            populateMapChooser(sharedOwners);
+            setMapInteractivity();   // <— new: enable/disable clicks + cursor
+        } catch (_) {}
+
+        try { await refreshOwnedSharesUI(); } catch {}
+
+    } else {
+        authScreen.style.display = 'flex';
+        document.body.classList.add('auth-pending');
+        accountBar.style.display = 'none';
+        accountInfo.textContent = '';
+        clearAllPinsUI();
+        if (sharedWithListEl) { sharedWithListEl.classList.add('muted'); sharedWithListEl.textContent = 'No one yet.'; }
+        if (mapChooser) mapChooser.value = 'self';
+        currentView = { type: 'self', ownerId: null };
+    }
+}
+logoutBtn.onclick = async () => {
+    try {
+    await fetch('/api/logout', { method:'POST', credentials:'same-origin' });
+    } catch(_) {}
+    clearAllPinsUI();
+    await hydrateAuth();
+};
+
+loginForm.onsubmit = async (e) => {
+    e.preventDefault();
+    loginErr.textContent = '';
+    const body = Object.fromEntries(new FormData(loginForm));
+    try {
+    await apiLogin(body);
+    clearAllPinsUI();
+    await hydrateAuth();
+    if (map) loadPins();
+    } catch (err) {
+    loginErr.textContent = err.message;
+    }
+};
+
+signupForm.onsubmit = async (e) => {
+    e.preventDefault();
+    signupErr.textContent = '';
+    const body = Object.fromEntries(new FormData(signupForm));
+    try {
+    await apiSignup(body);
+    clearAllPinsUI();
+    await hydrateAuth();
+    if (map) loadPins();
+    } catch (err) {
+    signupErr.textContent = err.message;
+    }
+};
+
+// On first load, decide whether to show login or map
+hydrateAuth();
+
+function canEditCurrentView() {
+  return currentView.type === 'self' || currentView.role === 'editor';
+}
+
+function setMapInteractivity() {
+  if (!map) return;
+  if (canEditCurrentView()) {
+    map.setOptions({ draggableCursor: null }); // default cursor
+  } else {
+    map.setOptions({ draggableCursor: 'not-allowed' }); // visual hint
+  }
+}
+
+window.initMap = function() {
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: { lat: -37.8136, lng: 144.9631 },
+    zoom: 13,
+  });
+
+  // block click for viewers
+  map.addListener('click', function(event) {
+    if (!canEditCurrentView()) {
+      // optional toast; keep it subtle
+      console.log('View-only: cannot add pins on this map');
+      return;
+    }
+    addPin(event.latLng);
+  });
+
+  setMapInteractivity();  // set initial cursor state
+  loadPins();
+};
 async function getCountryRegion(lat, lng) {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_API_KEY}`;
     const response = await fetch(url);
@@ -37,6 +180,9 @@ async function getCountryRegion(lat, lng) {
 }
 
 async function addPin(location, existingPin = null) {
+    if (!existingPin && !canEditCurrentView()) {
+        return; // don't place a new marker in UI either
+    }
     const marker = new google.maps.Marker({
         position: location,
         map: map,
@@ -65,17 +211,24 @@ async function addPin(location, existingPin = null) {
         region = locInfo.region;
         locationName = locInfo.locationName;
         try {
+            const body = {
+                latitude: location.lat(),
+                longitude: location.lng(),
+                note: '(no note yet)',
+                country,
+                region,
+                locationName
+            };
+
+            if (currentView.type === 'shared') {
+            body.user_id = currentView.ownerId; // tell backend whose map to add to
+            }
+
             const response = await fetch(`${API_BASE_URL}/pins`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    latitude: location.lat(),
-                    longitude: location.lng(),
-                    note: '',
-                    country,
-                    region,
-                    locationName
-                })
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
             });
             if (!response.ok) throw new Error('Failed to save pin');
             const savedPin = await response.json();
@@ -97,24 +250,34 @@ async function addPin(location, existingPin = null) {
     updateSidebar();
 }
 
-async function loadPins() {
-    try {
-        // clear existing markers before loading to avoid duplicates
-        markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
-        markers = [];
-        notes = {};
+let pinsLoading = false;
 
-        const response = await fetch(`${API_BASE_URL}/pins`);
-        if (!response.ok) throw new Error('Failed to load pins');
-        const pins = await response.json();
-        for (const pin of pins) {
-            const location = { lat: pin.latitude, lng: pin.longitude };
-            await addPin(location, pin);
-        }
-        updateSidebar();
-    } catch (error) {
-        console.error('loadPins error:', error);
+async function loadPins() {
+  if (pinsLoading) return;
+  pinsLoading = true;
+  try {
+    // clear existing markers before loading to avoid duplicates
+    markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
+    markers = [];
+    notes = {};
+
+    const url = currentView.type === 'self'
+        ? `${API_BASE_URL}/pins`
+        : `/api/shared/${encodeURIComponent(currentView.ownerId)}/pins`;
+    const response = await fetch(url, { credentials: 'same-origin' });
+    if (!response.ok) throw new Error('Failed to load pins');
+    const pins = await response.json();
+
+    for (const pin of pins) {
+      const location = { lat: pin.latitude, lng: pin.longitude };
+      await addPin(location, pin);
     }
+    updateSidebar();
+  } catch (error) {
+    console.error('loadPins error:', error);
+  } finally {
+    pinsLoading = false;
+  }
 }
 
 function openNotePanel(markerId) {
@@ -130,28 +293,36 @@ function closeNotePanel() {
 }
 
 async function saveNote() {
-    const noteText = document.getElementById('noteText').value.trim();
-    if (currentMarker) {
-        const markerObj = markers.find(m => m.id === currentMarker);
-        if (markerObj && markerObj.dbId) {
-            try {
-                const response = await fetch(`${API_BASE_URL}/pins/${markerObj.dbId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ note: noteText })
-                });
-                if (!response.ok) throw new Error('Failed to update note');
-            } catch (error) {}
+  const noteText = document.getElementById('noteText').value.trim();
+  if (currentMarker) {
+    const markerObj = markers.find(m => m.id === currentMarker);
+    if (markerObj && markerObj.dbId) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/pins/${markerObj.dbId}`, {
+          credentials: 'same-origin',
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: noteText })
+        });
+        if (!response.ok) {
+          const j = await response.json().catch(() => ({}));
+          throw new Error(j.message || 'Failed to update note');
         }
-        notes[currentMarker] = noteText;
-        if (markerObj && noteText) {
-            markerObj.marker.setTitle('Note: ' + noteText.substring(0, 50) + (noteText.length > 50 ? '...' : ''));
-        } else if (markerObj) {
-            markerObj.marker.setTitle('Click to add/edit note');
-        }
+      } catch (error) {
+        alert(error.message);       // <-- surface the error
+        return;                     // <-- don’t update local state on failure
+      }
     }
-    closeNotePanel();
-    updateSidebar();
+    // only update local state/title if backend update succeeded
+    notes[currentMarker] = noteText;
+    if (markerObj && noteText) {
+      markerObj.marker.setTitle('Note: ' + noteText.substring(0, 50) + (noteText.length > 50 ? '...' : ''));
+    } else if (markerObj) {
+      markerObj.marker.setTitle('Click to add/edit note');
+    }
+  }
+  closeNotePanel();
+  updateSidebar();
 }
 
 async function deletePin() {
@@ -161,7 +332,7 @@ async function deletePin() {
     if (!confirm('Are you sure you want to delete this pin?')) return;
     try {
         if (markerObj.dbId) {
-            const response = await fetch(`${API_BASE_URL}/pins/${markerObj.dbId}`, { method: 'DELETE' });
+            const response = await fetch(`${API_BASE_URL}/pins/${markerObj.dbId}`, { credentials : "same-origin" ,method: 'DELETE' });
             if (!response.ok) throw new Error('Failed to delete pin from database');
         }
         markerObj.marker.setMap(null);
@@ -207,6 +378,20 @@ function updateSidebar() {
     });
 }
 
+function clearAllPinsUI() {
+  // remove markers from map
+  markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
+  markers = [];
+  notes = {};
+  currentMarker = null;
+  // clear sidebar
+  const container = document.getElementById('pins-container');
+  if (container) container.innerHTML = '<div class="no-pins">No pins yet. Click on the map to add your first pin!</div>';
+  // close panel
+  const panel = document.getElementById('notesPanel');
+  if (panel) panel.style.display = 'none';
+}
+
 function focusOnPin(markerObj) {
     const position = markerObj.marker.getPosition();
     map.setCenter(position);
@@ -216,18 +401,6 @@ function focusOnPin(markerObj) {
     setTimeout(() => openNotePanel(markerObj.id), 500);
 }
 
-async function loadPins() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/pins`);
-        if (!response.ok) throw new Error('Failed to load pins');
-        const pins = await response.json();
-        for (const pin of pins) {
-            const location = { lat: pin.latitude, lng: pin.longitude };
-            await addPin(location, pin);
-        }
-        updateSidebar();
-    } catch (error) {}
-}
 
 document.addEventListener('click', function(event) {
     const panel = document.getElementById('notesPanel');
@@ -305,7 +478,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // call backend search endpoint
                 const url = `${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(trimmed)}`;
                 console.log('Searching pins:', url);
-                const response = await fetch(url);
+                const response = await fetch(url, { credentials: 'same-origin' });
                 if (!response.ok) throw new Error(`Search request failed: ${response.status}`);
                 const pins = await response.json();
 
@@ -410,3 +583,186 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+
+const mapChooser = document.getElementById('mapChooser');
+const shareEmail = document.getElementById('shareEmail');
+const shareBtn   = document.getElementById('shareBtn');
+const shareMsg   = document.getElementById('shareMsg');
+
+async function listSharedMaps() {
+  const r = await fetch('/api/shared', { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Failed to load shared maps');
+  return r.json(); // [{ owner_id, owner_email, role }]
+}
+
+function populateMapChooser(sharedOwners) {
+  // reset to only "My Pins"
+  mapChooser.innerHTML = '<option value="self">My Pins</option>';
+
+  sharedOwnersById = new Map();
+  for (const o of sharedOwners) {
+    sharedOwnersById.set(String(o.owner_id), { email: o.owner_email, role: o.role });
+
+    const opt = document.createElement('option');
+    opt.value = `shared:${o.owner_id}`;
+    opt.textContent = `Shared by ${o.owner_email}${o.role === 'editor' ? ' (edit)' : ' (viewer only)'}`;
+    mapChooser.appendChild(opt);
+  }
+}
+
+mapChooser.addEventListener('change', async () => {
+  const val = mapChooser.value;
+
+  if (val === 'self') {
+    currentView = { type: 'self', ownerId: null, role: 'editor' };
+  } else if (val.startsWith('shared:')) {
+    const ownerId = val.split(':')[1];
+    const meta = sharedOwnersById.get(ownerId) || { role: 'viewer' };
+    currentView = { type: 'shared', ownerId, role: meta.role };
+  }
+
+  setMapInteractivity();   // <— new: enable/disable clicks + cursor
+  await loadPins();
+});
+
+const shareRole = document.getElementById('shareRole');
+
+shareBtn.addEventListener('click', async () => {
+  shareMsg.textContent = '';
+  const email = (shareEmail.value || '').trim();
+  const role  = shareRole.value; // viewer or editor
+  
+
+  if (!email) { 
+    shareMsg.textContent = 'Enter an email.'; 
+    return; 
+  }
+  console.log('Sharing with', email, 'as', role);
+
+  try {
+    const r = await fetch('/api/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ email, role })
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Share failed');
+    shareMsg.textContent = `Shared as ${role}!`;
+    shareEmail.value = '';
+    shareRole.value = 'viewer'; // reset to default
+
+    await refreshOwnedSharesUI();
+  } catch (e) {
+    shareMsg.style.color = '#b91c1c';
+    shareMsg.textContent = e.message;
+  } finally {
+    setTimeout(() => { 
+      shareMsg.textContent = ''; 
+      shareMsg.style.color = '#2563eb'; 
+    }, 2500);
+  }
+});
+
+
+
+const sharedWithListEl = document.getElementById('sharedWithList');
+
+async function listOwnedShares() {
+  const r = await fetch('/api/shares', { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Failed to load shares');
+  return r.json(); // [{ member_id, email, role, createdAt }]
+}
+
+function renderOwnedShares(items) {
+  if (!items || items.length === 0) {
+    sharedWithListEl.classList.add('muted');
+    sharedWithListEl.innerHTML = 'No one yet.';
+    return;
+  }
+  sharedWithListEl.classList.remove('muted');
+  sharedWithListEl.innerHTML = '';
+  items.forEach(it => {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.gap = '8px';
+    row.style.padding = '6px 0';
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:500">${it.email}</div>
+        <div style="font-size:12px; color:#6b7280;">${it.role || 'viewer'}</div>
+      </div>
+      <button class="revoke-btn" data-email="${it.email}"
+        style="padding:6px 10px; border:none; border-radius:6px; background:#ef4444; color:#fff; cursor:pointer;">
+        Revoke
+      </button>
+    `;
+    sharedWithListEl.appendChild(row);
+  });
+
+  // wire revoke buttons
+  sharedWithListEl.querySelectorAll('.revoke-btn').forEach(btn => {
+    btn.onclick = async () => {
+        const email = btn.dataset.email;
+        if (!confirm(`Revoke access for ${email}?`)) return;
+
+        try {
+        const r = await fetch('/api/share', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ email })
+        });
+        if (!r.ok) {
+            const j = await r.json().catch(()=>({}));
+            throw new Error(j.error || 'Failed to revoke');
+        }
+
+        // If I was viewing this user's map, bounce back to my own
+        const isViewingRevoked =
+            currentView.type === 'shared' &&
+            sharedOwnersById.has(currentView.ownerId) &&
+            sharedOwnersById.get(currentView.ownerId) === email;
+
+        // Refresh “Shared with” list
+        const fresh = await listOwnedShares();
+        renderOwnedShares(fresh);
+
+        // Refresh map chooser (maps shared *to me*)
+        const sharedOwners = await listSharedMaps();
+        populateMapChooser(sharedOwners);
+
+        if (isViewingRevoked) {
+            // Switch to "My Pins"
+            const chooser = document.getElementById('mapChooser');
+            if (chooser) chooser.value = 'self';
+            currentView = { type: 'self', ownerId: null };
+            updatePinsHeader(null);
+            clearAllPinsUI();
+            await loadPins();
+        }
+
+        } catch (e) {
+        alert(e.message);
+        }
+    };
+    });
+}
+
+async function refreshOwnedSharesUI() {
+  try {
+    const items = await listOwnedShares();
+    renderOwnedShares(items);
+  } catch (e) {
+    console.error('Failed to refresh shares:', e);
+  }
+}
+
+const pinsHeaderEl = document.getElementById('pins-header');
+function updatePinsHeader(email) {
+  const el = document.getElementById('pins-header'); // re-query in case DOM changed
+  if (!el) return; // guard
+  el.textContent = email ? `📍 ${email}'s Pins` : '📍 Your Pins';
+}
