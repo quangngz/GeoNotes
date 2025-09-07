@@ -2,7 +2,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
 
@@ -37,8 +36,6 @@ const __dirname = path.dirname(__filename);
 // Serve static files from frontend directory
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// File-based storage (in project root to avoid Live Server refresh)
-const DATA_FILE = path.join(__dirname, '../../pins.json');
 
 // Sessions (Mongo-backed)
 app.use(
@@ -91,6 +88,10 @@ function ensureAuth(req, res, next) {
   if (req.isAuthenticated && req.isAuthenticated()) return next();
   res.status(401).json({ error: "Unauthorized" });
 }
+
+app.get("/config", (req, res) => {
+  res.json({ apiUrl: process.env.GOOGLE_MAPS_API_KEY});
+});
 
 // ----- Auth Routes -----
 app.post("/api/register", async (req, res) => {
@@ -172,10 +173,6 @@ app.get("/api/pins", ensureAuth, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch pins" });
   }
 });
-
-
-
-
 
 app.post("/api/pins", ensureAuth, async (req, res) => {
   try {
@@ -489,38 +486,6 @@ app.get("/api/wikidata", async (req, res) => {
   }
 });
 
-// app.get("/api/pins/search", ensureAuth, async (req, res) => {
-//   try {
-//     const { locationName } = req.query;
-
-//     if (!locationName || !locationName.trim()) {
-//       return res.status(400).json({ message: "Search query is required" });
-//     }
-
-//     const searchTerm = locationName.trim();
-
-//     // Build a case-insensitive regex search across multiple fields
-//     const regex = new RegExp(searchTerm, "i");
-
-//     const pins = await Pin.find({
-//       user_id: req.user.id, // only search in current user’s pins
-//       $or: [
-//         { locationName: regex },
-//         { country: regex },
-//         { region: regex },
-//         { note: regex },
-//         { label: regex }
-//       ]
-//     })
-//       .sort({ createdAt: -1 })
-//       .lean();
-
-//     res.json(pins.map(toClient));
-//   } catch (error) {
-//     console.error("Search error:", error);
-//     res.status(500).json({ message: error.message || "Failed to search pins" });
-//   }
-// });
 
 app.get("/api/pins/search", ensureAuth, async (req, res) => {
   try {
@@ -616,17 +581,31 @@ app.get("/api/macrostrat", async (req, res) => {
     const unitsData = await unitsResp.json();
     const columnsData = await columnsResp.json();
 
+    const unitsRaw   = Array.isArray(unitsData?.success?.data)   ? unitsData.success.data   : [];
+    const columnsRaw = Array.isArray(columnsData?.success?.data) ? columnsData.success.data : [];
+  
+
     // Process units data - get most relevant geological information
-    const units = (unitsData.success && Array.isArray(unitsData.data) ? unitsData.data : [])
-      .slice(0, 3)
-      .map(unit => ({
-        name: unit.unit_name,
-        age: unit.t_age ? `${unit.t_age} - ${unit.b_age} Ma` : null,
-        lithology: unit.lith?.join(', ') || null,
-        environment: unit.environ?.join(', ') || null,
-        thickness: unit.max_thick ? `${unit.max_thick}m` : null,
-        description: unit.unit_name
-      }));
+    // const units = (unitsData.success && Array.isArray(unitsData.data) ? unitsData.data : [])
+    //   .slice(0, 3)
+    //   .map(unit => ({
+    //     name: unit.unit_name,
+    //     age: unit.t_age ? `${unit.t_age} - ${unit.b_age} Ma` : null,
+    //     lithology: unit.lith?.join(', ') || null,
+    //     environment: unit.environ?.join(', ') || null,
+    //     thickness: unit.max_thick ? `${unit.max_thick}m` : null,
+    //     description: unit.unit_name
+    //   }));
+    
+    const units = unitsRaw.slice(0, 3).map(unit => ({
+      name: unit.unit_name,
+      age: (unit.t_age ?? null) && (unit.b_age ?? null) ? `${unit.t_age} - ${unit.b_age} Ma` : null,
+      lithology: Array.isArray(unit.lith)    ? unit.lith.join(', ')    : null,
+      environment: Array.isArray(unit.environ) ? unit.environ.join(', ') : null,
+      thickness: unit.max_thick ? `${unit.max_thick}m` : null,
+      description: unit.unit_name
+    }));
+    
 
     const columns = (columnsData.success && Array.isArray(columnsData.data) ? columnsData.data : [])
       .slice(0, 3)

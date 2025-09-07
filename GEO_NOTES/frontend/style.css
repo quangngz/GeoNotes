@@ -500,3 +500,10 @@ body {
 }
 
 
+#notesPanel {
+  max-height: 90vh;       /* take up to 90% of viewport height */
+  overflow-y: auto;       /* enable vertical scrollbar if content exceeds */
+  overflow-x: hidden;     /* hide horizontal overflow */
+  padding: 12px;
+  box-sizing: border-box; /* include padding in height */
+}

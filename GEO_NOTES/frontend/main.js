@@ -1,5 +1,6 @@
 // Remove the duplicate addPin and updateSidebar functions.
 // Keep only the versions that include country/region/locationName support and sidebar improvements.
+
 let map;
 let markers = [];
 let notes = {};
@@ -8,7 +9,7 @@ let currentMarker = null;
 let selectedLabel = 'General';
 let customLabels = JSON.parse(localStorage.getItem('customLabels') || '[]');
 const API_BASE_URL = '/api';
-const GOOGLE_API_KEY = 'AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0'; // Use your key
+
 
 const authScreen = document.getElementById('auth-screen');
 const tabLogin   = document.getElementById('tab-login');
@@ -26,6 +27,7 @@ let sharedOwnersById = new Map();
 
 // what I'm currently looking at
 let currentView = { type: "self", ownerId: null, role: "editor" };
+const GOOGLE_API_KEY = "AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0";
 
 
 let savedCustomLabels = []; // fetched from backend
@@ -50,6 +52,8 @@ tabSignup.onclick = () => {
     signupForm.classList.remove('auth-hidden'); loginForm.classList.add('auth-hidden');
     signupErr.textContent = '';
 };
+
+
 
 async function me() {
     try {
@@ -181,6 +185,9 @@ window.initMap = function() {
   setMapInteractivity();  // set initial cursor state
   loadPins();
 };
+
+
+
 async function getCountryRegion(lat, lng) {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_API_KEY}`;
     const response = await fetch(url);
@@ -373,7 +380,6 @@ function renderWikidataPayload(payload) {
       <div style="margin-top:6px;"><b>General:</b> ${context?.label || '—'}</div>
       ${govRows ? `<div style="margin-top:6px;">${govRows}</div>` : ''}
       ${econRows ? `<div style="margin-top:6px;">${econRows}</div>` : ''}
-      <div style="margin-top:6px;">${climateRow}</div>
       <div style="margin-top:10px;">
         <div class="wikidata-header" style="margin:0 0 4px 0;">⭐ Top 3 famous nearby</div>
         ${highlightsHtml}
@@ -1074,10 +1080,6 @@ async function fetchFossilData(markerObj, radiusKm = 50) {
     console.error('Fossil data error:', e);
     return { success: false, message: e.message };
   }
-}
-
-function formatNumber(n) {
-  return typeof n === 'number' && isFinite(n) ? n.toLocaleString() : null;
 }
 
 // Render geological data from Macrostrat
