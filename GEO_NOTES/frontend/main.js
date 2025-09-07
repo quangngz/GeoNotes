@@ -3,7 +3,10 @@
 let map;
 let markers = [];
 let notes = {};
+let labels = {};
 let currentMarker = null;
+let selectedLabel = 'general';
+let customLabels = JSON.parse(localStorage.getItem('customLabels') || '[]');
 const API_BASE_URL = '/api';
 const GOOGLE_API_KEY = 'AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0'; // Use your key
 
@@ -24,9 +27,18 @@ let sharedOwnersById = new Map();
 // what I'm currently looking at
 let currentView = { type: "self", ownerId: null, role: "editor" };
 
-// globals near the top
-let selectedLabel = "General";
+
 let savedCustomLabels = []; // fetched from backend
+
+
+const LABEL_VALUE_MAP = {
+  geology: "Geology",
+  climate: "Climate",
+  demographic: "Demographic",
+  culture: "Culture",
+  "house_market": "House Market",
+  general: "General"
+};
 
 tabLogin.onclick = () => {
     tabLogin.classList.add('active'); tabSignup.classList.remove('active');
@@ -249,6 +261,7 @@ async function addPin(location, existingPin = null) {
             markerId = Date.now().toString();
             dbId = null;
         }
+        labels[markerId] = 'general';
     }
 
     markers.push({ id: markerId, marker: marker, dbId: dbId, country, region, locationName, label });
@@ -441,6 +454,7 @@ async function deletePin() {
         markerObj.marker.setMap(null);
         markers = markers.filter(m => m.id !== currentMarker);
         delete notes[currentMarker];
+        delete labels[currentMarker];
         closeNotePanel();
         updateSidebar();
     } catch (error) {
@@ -459,6 +473,7 @@ function updateSidebar() {
         const pin = {
             id: markerObj.id,
             note: notes[markerObj.id] || '',
+            label: labels[markerObj.id] || 'general',
             position: markerObj.marker.getPosition(),
             country: markerObj.country,
             region: markerObj.region,
@@ -530,119 +545,48 @@ document.addEventListener('DOMContentLoaded', function() {
     const pinsList = document.getElementById('pins-list') || document.querySelector('.pins-list') || null;
     const insertBeforeNode = pinsList || sidebar.firstChild;
 
-    // avoid adding twice
-    // if (!document.getElementById('locationSearchWrapper')) {
-    //     const locationSearchDiv = document.createElement('div');
-    //     locationSearchDiv.id = 'locationSearchWrapper';
-    //     locationSearchDiv.style.display = 'flex';
-    //     locationSearchDiv.style.gap = '8px';
-    //     locationSearchDiv.style.marginBottom = '10px';
-
-    //     const input = document.createElement('input');
-    //     input.id = 'locationSearch';
-    //     input.type = 'text';
-    //     input.placeholder = 'Search by location name...';
-    //     input.style.flex = '1';
-    //     input.style.padding = '8px';
-    //     input.style.borderRadius = '4px';
-    //     input.style.border = '1px solid #ccc';
-
-    //     const btn = document.createElement('button');
-    //     btn.id = 'locationSearchBtn';
-    //     btn.type = 'button'; // prevent accidental form submit
-    //     btn.textContent = 'Search';
-    //     btn.style.padding = '8px 12px';
-    //     btn.style.borderRadius = '4px';
-    //     btn.style.border = 'none';
-    //     btn.style.background = '#4285f4';
-    //     btn.style.color = 'white';
-    //     btn.style.cursor = 'pointer';
-
-    //     locationSearchDiv.appendChild(input);
-    //     locationSearchDiv.appendChild(btn);
-
-    //     if (insertBeforeNode && insertBeforeNode.parentNode) {
-    //         insertBeforeNode.parentNode.insertBefore(locationSearchDiv, insertBeforeNode);
-    //     } else {
-    //         sidebar.insertBefore(locationSearchDiv, sidebar.firstChild);
-    //     }
-    // }
-
-    // search function - runs on Enter or button press
-    // async function searchByLocationName() {
-    //         const query = (document.getElementById('locationSearch') || {}).value || '';
-    //         const trimmed = query.trim();
-    //         if (!trimmed) {
-    //             // empty => reload all pins (loadPins already clears markers)
-    //             await loadPins();
-    //             return;
-    //         }
-
-    //         try {
-    //             // call backend search endpoint
-    //             const url = `${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(trimmed)}`;
-    //             console.log('Searching pins:', url);
-    //             const response = await fetch(url);
-    //             if (!response.ok) throw new Error(`Search request failed: ${response.status}`);
-    //             const pins = await response.json();
-
-    //             // clear existing markers from map and local state
-    //             markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
-    //             markers = [];
-    //             notes = {};
-    //             labels = {};
-
-    //             // add returned pins as existing pins (addPin will set notes and markers)
-    //             for (const pin of pins) {
-    //                 const location = { lat: pin.latitude, lng: pin.longitude };
-    //                 // coerce id inside addPin
-    //                 await addPin(location, pin);
-    //             }
-
-    //             // show only the search results in the sidebar (don't call updateSidebar here,
-    //             // because updateSidebar would re-render all markers and overwrite the search list)
-    //             showLocationNames(pins);
-    //         } catch (err) {
-    //             console.error('Error during location search:', err);
-    //         }
-    //     }
+    
 
     async function searchByLocationName() {
-        const query = (document.getElementById('locationSearch') || {}).value || '';
-        const trimmed = query.trim();
-        if (!trimmed) {
-            // empty => reload all pins (loadPins already clears markers)
-            await loadPins();
-            return;
+      const queryEl = document.getElementById('locationSearch');
+      const query = (queryEl ? queryEl.value : '') || '';
+      const trimmed = query.trim();
+
+      if (!trimmed) {
+        await loadPins(); // no query => show full current view
+        return;
+      }
+
+      try {
+        // pick the correct endpoint based on which map you're viewing
+        const url = (currentView.type === 'self')
+          ? `/api/pins/search?locationName=${encodeURIComponent(trimmed)}`
+          : `/api/shared/${encodeURIComponent(currentView.ownerId)}/search?locationName=${encodeURIComponent(trimmed)}`;
+
+        const response = await fetch(url, { credentials: 'same-origin' });
+        if (!response.ok) {
+          const j = await response.json().catch(() => ({}));
+          throw new Error(j.message || j.error || `Search request failed: ${response.status}`);
+        }
+        const pins = await response.json();
+
+        // clear existing markers from map and local state
+        markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
+        markers = [];
+        notes = {};
+        // ❌ was: labels = {};  // this caused a ReferenceError
+
+        // render only the results
+        for (const pin of pins) {
+          await addPin({ lat: pin.latitude, lng: pin.longitude }, pin);
         }
 
-        try {
-            // call backend search endpoint
-            const url = `${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(trimmed)}`;
-            console.log('Searching pins:', url);
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Search request failed: ${response.status}`);
-            const pins = await response.json();
-
-            // clear existing markers from map and local state
-            markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
-            markers = [];
-            notes = {};
-            labels = {};
-
-            // add returned pins as existing pins (addPin will set notes and markers)
-            for (const pin of pins) {
-                const location = { lat: pin.latitude, lng: pin.longitude };
-                // coerce id inside addPin
-                await addPin(location, pin);
-            }
-
-            // show only the search results in the sidebar (don't call updateSidebar here,
-            // because updateSidebar would re-render all markers and overwrite the search list)
-            showLocationNames(pins);
-        } catch (err) {
-            console.error('Error during location search:', err);
-        }
+        // show the results in the sidebar
+        showLocationNames(pins);
+      } catch (err) {
+        console.error('Error during location search:', err);
+        alert(err.message || 'Failed to search');
+      }
     }
 
     // display matching location names in the sidebar container
@@ -673,13 +617,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const locationText = pin.locationName || `${pin.latitude.toFixed(4)}, ${pin.longitude.toFixed(4)}`;
             const noteText = pin.note || 'No note added';
             const dateText = pin.createdAt ? new Date(pin.createdAt).toLocaleDateString() : '';
+            const labelInfo = getLabelInfo(pin.label || 'general');
 
             div.innerHTML = `
-                <div class="pin-location">📍 ${locationText}</div>
+                <div class="pin-location">📍 ${locationText}<span class="pin-label ${pin.label || 'general'}" style="color:#000"> ${pin.label}</span></div>
                 <div class="pin-note">${escapeHtml(noteText)}</div>
                 <div class="pin-date">${dateText}</div>
                 <div style="font-size:11px;color:#888;">${pin.region ? pin.region + ', ' : ''}${pin.country || ''}</div>
             `;
+            console.log(pin.label.toLowerCase);
 
             div.addEventListener('click', () => {
                 // center map and open note panel for this pin
@@ -762,6 +708,60 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   };
+
+  document.querySelectorAll('.search-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // header buttons
+      document.querySelectorAll('.search-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // content panes
+      const mode = btn.dataset.search; // "text" or "label"
+      document.querySelectorAll('.search-content').forEach(pane => pane.classList.remove('active'));
+      document.getElementById(mode === 'label' ? 'labelSearch' : 'textSearch')
+        .classList.add('active');
+    });
+  });
+
+  const labelFilterSel = document.getElementById('labelFilter');
+  const labelFilterBtn = document.getElementById('labelFilterBtn');
+
+  async function filterByLabel() {
+    let val = (labelFilterSel.value || "").trim();
+    if (!val) {           // "All Labels"
+      await loadPins();   // reload whatever view is active
+      return;
+    }
+
+    // Map to DB label (Title Case) if it's one of the built-ins
+    const proper = LABEL_VALUE_MAP[val] || val; // custom labels pass through
+
+    try {
+      // choose endpoint based on current view (self vs shared)
+      const url = (currentView.type === 'self')
+        ? `/api/pins/search?label=${encodeURIComponent(proper)}`
+        : `/api/shared/${encodeURIComponent(currentView.ownerId)}/search?label=${encodeURIComponent(proper)}`;
+
+      const r = await fetch(url, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('Label search failed');
+      const pins = await r.json();
+
+      // clear current markers and show only filtered ones
+      markers.forEach(m => { try { m.marker.setMap(null); } catch(e){} });
+      markers = [];
+      notes = {};
+
+      for (const p of pins) {
+        await addPin({ lat: p.latitude, lng: p.longitude }, p);
+      }
+      updateSidebar();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Failed to filter by label');
+    }
+  }
+
+  if (labelFilterBtn) labelFilterBtn.addEventListener('click', filterByLabel);
 });
 
 
@@ -1012,4 +1012,24 @@ function renderCustomLabelChips() {
 
   // re-apply active outline if needed
   setActiveLabelUI(selectedLabel);
+}
+
+// Label configuration
+function getLabelInfo(labelType) {
+    const labelConfig = {
+        geology: { name: 'Geology', icon: '🪨' },
+        climate: { name: 'Climate', icon: '🌡️' },
+        demographic: { name: 'Demographic', icon: '👥' },
+        culture: { name: 'Culture', icon: '🎭' },
+        house_market: { name: 'House Market', icon: '🏠' },
+        general: { name: 'General', icon: '📝' }
+    };
+    
+    // Check if it's a custom label
+    const customLabel = customLabels.find(label => label.id === labelType);
+    if (customLabel) {
+        return { name: customLabel.name, icon: '🏷️' };
+    }
+    
+    return labelConfig[labelType] || labelConfig.general;
 }

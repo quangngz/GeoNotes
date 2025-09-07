@@ -489,32 +489,65 @@ app.get("/api/wikidata", async (req, res) => {
   }
 });
 
+// app.get("/api/pins/search", ensureAuth, async (req, res) => {
+//   try {
+//     const { locationName } = req.query;
+
+//     if (!locationName || !locationName.trim()) {
+//       return res.status(400).json({ message: "Search query is required" });
+//     }
+
+//     const searchTerm = locationName.trim();
+
+//     // Build a case-insensitive regex search across multiple fields
+//     const regex = new RegExp(searchTerm, "i");
+
+//     const pins = await Pin.find({
+//       user_id: req.user.id, // only search in current user’s pins
+//       $or: [
+//         { locationName: regex },
+//         { country: regex },
+//         { region: regex },
+//         { note: regex },
+//         { label: regex }
+//       ]
+//     })
+//       .sort({ createdAt: -1 })
+//       .lean();
+
+//     res.json(pins.map(toClient));
+//   } catch (error) {
+//     console.error("Search error:", error);
+//     res.status(500).json({ message: error.message || "Failed to search pins" });
+//   }
+// });
+
 app.get("/api/pins/search", ensureAuth, async (req, res) => {
   try {
-    const { locationName } = req.query;
+    const { locationName, label } = req.query;
+    const q = { user_id: req.user.id };
 
-    if (!locationName || !locationName.trim()) {
-      return res.status(400).json({ message: "Search query is required" });
+    if (label && label.trim()) {
+      // exact match, case-insensitive, to respect enum values
+      q.label = new RegExp(`^${label.trim()}$`, "i");
     }
 
-    const searchTerm = locationName.trim();
-
-    // Build a case-insensitive regex search across multiple fields
-    const regex = new RegExp(searchTerm, "i");
-
-    const pins = await Pin.find({
-      user_id: req.user.id, // only search in current user’s pins
-      $or: [
+    if (locationName && locationName.trim()) {
+      const regex = new RegExp(locationName.trim(), "i");
+      q.$or = [
         { locationName: regex },
         { country: regex },
         { region: regex },
         { note: regex },
         { label: regex }
-      ]
-    })
-      .sort({ createdAt: -1 })
-      .lean();
+      ];
+    }
 
+    if (!q.$or && !q.label) {
+      return res.status(400).json({ message: "Provide label or text to search" });
+    }
+
+    const pins = await Pin.find(q).sort({ createdAt: -1 }).lean();
     res.json(pins.map(toClient));
   } catch (error) {
     console.error("Search error:", error);
@@ -522,6 +555,43 @@ app.get("/api/pins/search", ensureAuth, async (req, res) => {
   }
 });
 
+
+app.get("/api/shared/:ownerId/search", ensureAuth, async (req, res) => {
+  try {
+    const { ownerId } = req.params;
+    const { locationName, label } = req.query;
+
+    const hasAccess = await Share.exists({ owner_id: ownerId, member_id: req.user.id });
+    if (!hasAccess) return res.status(403).json({ error: "No access to this map" });
+
+    const q = { user_id: ownerId };
+
+    if (label && label.trim()) {
+      q.label = new RegExp(`^${label.trim()}$`, "i");
+    }
+
+    if (locationName && locationName.trim()) {
+      const regex = new RegExp(locationName.trim(), "i");
+      q.$or = [
+        { locationName: regex },
+        { country: regex },
+        { region: regex },
+        { note: regex },
+        { label: regex }
+      ];
+    }
+
+    if (!q.$or && !q.label) {
+      return res.status(400).json({ message: "Provide label or text to search" });
+    }
+
+    const pins = await Pin.find(q).sort({ createdAt: -1 }).lean();
+    res.json(pins.map(toClient));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to search shared pins" });
+  }
+});
 
 // Start server
 const PORT = process.env.PORT || 5000;
