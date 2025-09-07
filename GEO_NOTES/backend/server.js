@@ -15,6 +15,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import User from "./models/User.js";
 import Pin from "./models/Pin.js";
 import Share from "./models/Share.js";
+import Label from "./models/Label.js";
 import { connectDB } from "./models/index.js";
 
 dotenv.config();
@@ -130,18 +131,17 @@ app.get("/api/me", (req, res) => {
 });
 
 
-
+// server.js (helpers) — add 'label' to pickWritableFields
 const pickWritableFields = (body) => {
   const w = {};
-  // allow coords update if provided
   if (body.latitude !== undefined)  w.latitude  = Number(body.latitude);
   if (body.longitude !== undefined) w.longitude = Number(body.longitude);
 
-  if (body.title !== undefined)        w.title = String(body.title).trim() || "Untitled";
   if (body.note !== undefined)         w.note = String(body.note);
   if (body.country !== undefined)      w.country = String(body.country);
   if (body.region !== undefined)       w.region = String(body.region);
   if (body.locationName !== undefined) w.locationName = String(body.locationName);
+  if (body.label !== undefined)        w.label = String(body.label).trim(); // <— NEW
   return w;
 };
 
@@ -151,6 +151,7 @@ const toClient = (doc) => ({
   latitude: doc.latitude,
   longitude: doc.longitude,
   title: doc.title,
+  label: doc.label,
   country: doc.country,
   region: doc.region,
   locationName: doc.locationName,
@@ -172,27 +173,9 @@ app.get("/api/pins", ensureAuth, async (req, res) => {
   }
 });
 
-// Create a new pin for the logged-in user
-// app.post("/api/pins", ensureAuth, async (req, res) => {
-//   try {
-//     const { latitude, longitude } = req.body || {};
-//     if (latitude === undefined || longitude === undefined) {
-//       return res.status(400).json({ message: "latitude and longitude are required" });
-//     }
 
-//     const data = pickWritableFields(req.body);
-//     // enforce requireds with safe defaults
-//     data.title = data.title ?? "Untitled";
-//     data.note = data.note ?? "";
-//     data.user_id = req.user.id;
 
-//     const created = await Pin.create(data);
-//     res.status(201).json(toClient(created));
-//   } catch (error) {
-//     console.error(error);
-//     res.status(400).json({ message: error.message || "Failed to create pin" });
-//   }
-// });
+
 
 app.post("/api/pins", ensureAuth, async (req, res) => {
   try {
@@ -204,6 +187,7 @@ app.post("/api/pins", ensureAuth, async (req, res) => {
     const data = pickWritableFields(req.body);
     data.title = data.title ?? "Untitled";
     data.note  = data.note  ?? "";
+    data.label = (data.label && data.label.trim()) || "General"; // <— default
 
     if (targetUserId && targetUserId !== req.user.id) {
       // require EDITOR to add pins to someone else's map
@@ -227,6 +211,35 @@ app.post("/api/pins", ensureAuth, async (req, res) => {
     res.status(400).json({ message: error.message || "Failed to create pin" });
   }
 });
+
+// Get my saved custom labels
+app.get("/api/labels", ensureAuth, async (req, res) => {
+  const rows = await Label.find({ user_id: req.user.id }).sort({ name: 1 }).lean();
+  res.json(rows.map(r => r.name));
+});
+
+// Add a custom label (idempotent)
+app.post("/api/labels", ensureAuth, async (req, res) => {
+  const name = (req.body?.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Label name is required" });
+  if (name.length > 30) return res.status(400).json({ error: "Label too long (max 30)" });
+
+  await Label.updateOne(
+    { user_id: req.user.id, name },
+    { $setOnInsert: { user_id: req.user.id, name } },
+    { upsert: true }
+  );
+  res.json({ ok: true, name });
+});
+
+// Remove a custom label
+app.delete("/api/labels", ensureAuth, async (req, res) => {
+  const name = (req.body?.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Label name is required" });
+  await Label.deleteOne({ user_id: req.user.id, name });
+  res.json({ ok: true });
+});
+
 // Update a pin (only if it belongs to the logged-in user)
 app.put("/api/pins/:id", ensureAuth, async (req, res) => {
   try {
@@ -331,6 +344,7 @@ app.get("/api/shared/:ownerId/pins", ensureAuth, async (req, res) => {
       _id: p._id, user_id: p.user_id,
       latitude: p.latitude, longitude: p.longitude,
       title: p.title, note: p.note,
+      label: p.label,
       country: p.country, region: p.region, locationName: p.locationName,
       createdAt: p.createdAt, updatedAt: p.updatedAt
     })));
@@ -373,6 +387,141 @@ app.get("/api/shares", ensureAuth, async (req, res) => {
     res.status(500).json({ error: "Failed to load shares" });
   }
 });
+
+app.get("/api/wikidata", async (req, res) => {
+  try {
+    const { lat, lng, radius = "5" } = req.query;
+    if (!lat || !lng) return res.status(400).json({ message: "lat and lng are required" });
+
+    const contextSparql = `
+      SELECT ?place ?placeLabel ?type ?typeLabel ?adminLabel ?countryLabel
+             ?population ?elev ?capitalLabel ?govTypeLabel ?headGovLabel ?headStateLabel
+             ?gdp ?gdpPerCapita ?koppenLabel
+      WHERE {
+        SERVICE wikibase:around {
+          ?place wdt:P625 ?coord .
+          bd:serviceParam wikibase:center "Point(${Number(lng)} ${Number(lat)})"^^geo:wktLiteral ;
+                          wikibase:radius "${radius}" .
+        }
+        ?place wdt:P31 ?type .
+        # Prefer contextual entities only
+        FILTER(?type IN (wd:Q515, wd:Q3957, wd:Q5119, wd:Q56061)) # city, town, suburb, admin. territorial entity
+
+        OPTIONAL { ?place wdt:P131 ?admin. }
+        OPTIONAL { ?place wdt:P17 ?country. }
+        OPTIONAL { ?place wdt:P1082 ?population. }
+        OPTIONAL { ?place wdt:P2044 ?elev. }
+
+        OPTIONAL { ?place wdt:P36 ?capital. }
+        OPTIONAL { ?place wdt:P122 ?govType. }
+        OPTIONAL { ?place wdt:P6 ?headGov. }
+        OPTIONAL { ?place wdt:P35 ?headState. }
+
+        OPTIONAL { ?place wdt:P2131 ?gdp. }
+        OPTIONAL { ?place wdt:P2132 ?gdpPerCapita. }
+
+        OPTIONAL { ?place wdt:P3986 ?koppen. } # Köppen climate classification
+
+        SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+      }
+      # choose the most "notable": higher population first, then with labels
+      ORDER BY DESC(?population)
+      LIMIT 1
+    `;
+
+    const highlightsSparql = `
+      SELECT ?item ?itemLabel ?typeLabel ?links WHERE {
+        SERVICE wikibase:around {
+          ?item wdt:P625 ?coord .
+          bd:serviceParam wikibase:center "Point(${Number(lng)} ${Number(lat)})"^^geo:wktLiteral ;
+                          wikibase:radius "${radius}" .
+        }
+        OPTIONAL { ?item wdt:P31 ?type. }
+        ?item wikibase:sitelinks ?links .
+        # De-noise micro POIs
+        FILTER( !REGEX(STR(?type), "(tram|bus|rail|subway|train).*stop", "i")
+             && !REGEX(STR(?type), "school|primary|high school|college|kindergarten", "i")
+             && !REGEX(STR(?type), "parking|toilet|bench|postbox|waste", "i") )
+        SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+      }
+      ORDER BY DESC(?links)
+      LIMIT 3
+    `;
+
+    const run = async (sparql) => {
+      const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`;
+      const resp = await fetch(url, { headers: { "User-Agent": "GeoNotes/1.0 (student project)" } });
+      if (!resp.ok) throw new Error(`WDQS error: ${resp.status}`);
+      return resp.json();
+    };
+
+    const [contextJson, highlightsJson] = await Promise.all([run(contextSparql), run(highlightsSparql)]);
+    const b = contextJson.results?.bindings?.[0];
+
+    const context = b ? {
+      id: b.place?.value,
+      label: b.placeLabel?.value,
+      type: b.typeLabel?.value || null,
+      admin: b.adminLabel?.value || null,
+      country: b.countryLabel?.value || null,
+      population: b.population ? Number(b.population.value) : null,
+      elevation_m: b.elev ? Number(b.elev.value) : null,
+      capital: b.capitalLabel?.value || null,
+      government_type: b.govTypeLabel?.value || null,
+      head_of_government: b.headGovLabel?.value || null,
+      head_of_state: b.headStateLabel?.value || null,
+      gdp: b.gdp ? Number(b.gdp.value) : null,
+      gdp_per_capita: b.gdpPerCapita ? Number(b.gdpPerCapita.value) : null,
+      climate: b.koppenLabel?.value || null
+    } : null;
+
+    const highlights = (highlightsJson.results?.bindings || []).map(x => ({
+      id: x.item?.value,
+      label: x.itemLabel?.value,
+      type: x.typeLabel?.value || null,
+      sitelinks: x.links ? Number(x.links.value) : null
+    }));
+
+    res.json({ context, highlights });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+app.get("/api/pins/search", ensureAuth, async (req, res) => {
+  try {
+    const { locationName } = req.query;
+
+    if (!locationName || !locationName.trim()) {
+      return res.status(400).json({ message: "Search query is required" });
+    }
+
+    const searchTerm = locationName.trim();
+
+    // Build a case-insensitive regex search across multiple fields
+    const regex = new RegExp(searchTerm, "i");
+
+    const pins = await Pin.find({
+      user_id: req.user.id, // only search in current user’s pins
+      $or: [
+        { locationName: regex },
+        { country: regex },
+        { region: regex },
+        { note: regex },
+        { label: regex }
+      ]
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(pins.map(toClient));
+  } catch (error) {
+    console.error("Search error:", error);
+    res.status(500).json({ message: error.message || "Failed to search pins" });
+  }
+});
+
 
 // Start server
 const PORT = process.env.PORT || 5000;

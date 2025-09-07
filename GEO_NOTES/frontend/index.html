@@ -130,6 +130,28 @@
         <!-- Shared maps will be injected here -->
       </select>
     </div>
+    
+    <div class="search-section">
+      <div class="search-tabs">
+        <button class="search-tab active" data-search="text">🔍 Text</button>
+        <button class="search-tab" data-search="label">🏷️ Label</button>
+      </div>
+      <div id="textSearch" class="search-content active">
+        <input type="text" id="locationSearch" placeholder="Search by anything..." />
+        <button id="locationSearchBtn">Search</button>
+      </div>
+      <div id="labelSearch" class="search-content">
+        <select id="labelFilter">
+          <option value="">All Labels</option>
+          <option value="geology">🪨 Geology</option>
+          <option value="climate">🌡️ Climate</option>
+          <option value="demographic">👥 Demographic</option>
+          <option value="culture">🎭 Culture</option>
+          <option value="general">📝 General</option>
+        </select>
+        <button id="labelFilterBtn">Filter</button>
+      </div>
+    </div>
 
     <div id="pins-list">
       <div class="pins-header" id="pins-header">📍 Your Pins</div>
@@ -150,7 +172,7 @@
   </div>
 
   <!-- Notes Panel -->
-  <div id="notesPanel" style="display: none;">
+  <!-- <div id="notesPanel" style="display: none;">
     <h3>Add Note</h3>
     <textarea id="noteText" placeholder="Enter your note here..." rows="4"></textarea>
     <div style="text-align: right;">
@@ -158,9 +180,62 @@
       <button id="deletePinBtn">Delete Pin</button>
       <button id="closeNotePanelBtn">Cancel</button>
     </div>
+  </div> -->
 
+  <!-- Notes Panel -->
+  <div id="notesPanel" style="display: none;">
+    <h3>Add Note</h3>
     
+    <!-- Label Selection -->
+    <div class="label-section">
+      <h4>Category:</h4>
+      <div class="label-buttons">
+        <button class="label-btn" data-label="geology" style="background-color: #8B4513; color: white;">
+          🪨 Geology
+        </button>
+        <button class="label-btn" data-label="climate" style="background-color: #4CAF50; color: white;">
+          🌡️ Climate
+        </button>
+        <button class="label-btn" data-label="demographic" style="background-color: #2196F3; color: white;">
+          👥 Demographic
+        </button>
+        <button class="label-btn" data-label="culture" style="background-color: #9C27B0; color: white;">
+          🎭 Culture
+        </button>
+        <button class="label-btn" data-label="house_market" style="background-color: #FF9800; color: white;">
+          🏠 House Market
+        </button>
+        <button class="label-btn" data-label="general" style="background-color: #d3d3d3; color: black;">
+          📝 General
+        </button>
+      </div>
+      
+      <!-- Custom Label Input -->
+      <div class="custom-label-section">
+        <div class="custom-label-input">
+          <input type="text" id="customLabelInput" placeholder="Create custom label..." maxlength="20">
+          <button id="addCustomLabelBtn" type="button">Add</button>
+        </div>
+        <div id="customLabels" class="custom-labels-container"></div>
+      </div>
+    </div>
+
+    <!-- Recommended by Wikidata -->
+    <div id="wikidataPanel" class="wikidata">
+      <div class="wikidata-header">🔎 Recommended data near this pin</div>
+      <div id="wikidataContent" class="wikidata-content">Loading…</div>
+    </div>
+    
+ 
+
+    <textarea id="noteText" placeholder="Enter your note here..." rows="4"></textarea>
+    <div style="text-align: right;">
+      <button id="saveNoteBtn">Save</button>
+      <button id="deletePinBtn">Delete Pin</button>
+      <button id="closeNotePanelBtn">Cancel</button>
+    </div>    
   </div>
+
 
   
 

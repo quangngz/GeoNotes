@@ -24,6 +24,10 @@ let sharedOwnersById = new Map();
 // what I'm currently looking at
 let currentView = { type: "self", ownerId: null, role: "editor" };
 
+// globals near the top
+let selectedLabel = "General";
+let savedCustomLabels = []; // fetched from backend
+
 tabLogin.onclick = () => {
     tabLogin.classList.add('active'); tabSignup.classList.remove('active');
     loginForm.classList.remove('auth-hidden'); signupForm.classList.add('auth-hidden');
@@ -81,6 +85,7 @@ async function hydrateAuth() {
         } catch (_) {}
 
         try { await refreshOwnedSharesUI(); } catch {}
+        try { await loadCustomLabels(); } catch (_) {}
 
     } else {
         authScreen.style.display = 'flex';
@@ -192,18 +197,23 @@ async function addPin(location, existingPin = null) {
 
     let markerId, dbId;
     let country, region, locationName;
+    let label = selectedLabel || 'General';
     if (existingPin) {
         // ensure id is a string for consistent comparisons
         markerId = existingPin._id && existingPin._id.toString ? existingPin._id.toString() : String(existingPin._id || Date.now());
         dbId = markerId;
-        notes[markerId] = existingPin.note || '';
+        notes[markerId] = existingPin.note || '(no note yet)';
         country = existingPin.country || null;
         region = existingPin.region || null;
         locationName = existingPin.locationName || existingPin.formatted_address || null;
+        label = existingPin.label || 'General'; // <— pick up label from DB
+
+        
         if (existingPin.note) {
             marker.setTitle('Note: ' + existingPin.note.substring(0, 50) + 
                            (existingPin.note.length > 50 ? '...' : ''));
         }
+        
     } else {
         // Get country/region/locationName from Google API
         const locInfo = await getCountryRegion(location.lat(), location.lng());
@@ -217,18 +227,19 @@ async function addPin(location, existingPin = null) {
                 note: '(no note yet)',
                 country,
                 region,
-                locationName
+                locationName,
+                label: selectedLabel
             };
 
             if (currentView.type === 'shared') {
-            body.user_id = currentView.ownerId; // tell backend whose map to add to
+              body.user_id = currentView.ownerId; // tell backend whose map to add to
             }
 
             const response = await fetch(`${API_BASE_URL}/pins`, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
             });
             if (!response.ok) throw new Error('Failed to save pin');
             const savedPin = await response.json();
@@ -240,7 +251,7 @@ async function addPin(location, existingPin = null) {
         }
     }
 
-    markers.push({ id: markerId, marker: marker, dbId: dbId, country, region, locationName });
+    markers.push({ id: markerId, marker: marker, dbId: dbId, country, region, locationName, label });
     marker.addListener('click', function(event) {
         if (event && event.stop) event.stop();
         openNotePanel(markerId);
@@ -280,10 +291,98 @@ async function loadPins() {
   }
 }
 
+// main.js — replace the existing fetch/render functions you added earlier
+
+async function fetchWikidataForMarker(markerObj, radiusKm = 5) {
+  try {
+    const pos = markerObj.marker.getPosition();
+    const url = `${API_BASE_URL}/wikidata?lat=${pos.lat()}&lng=${pos.lng()}&radius=${encodeURIComponent(radiusKm)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Wikidata fetch failed: ${resp.status}`);
+    return await resp.json(); // { context, highlights }
+  } catch (e) {
+    console.error(e);
+    return { context: null, highlights: [] };
+  }
+}
+
+function formatNumber(n) {
+  return typeof n === 'number' && isFinite(n) ? n.toLocaleString() : null;
+}
+
+function renderWikidataPayload(payload) {
+  const box = document.getElementById('wikidataContent');
+  if (!box) return;
+
+  const { context, highlights } = payload || {};
+  if (!context && (!highlights || highlights.length === 0)) {
+    box.innerHTML = `<div style="color:#888;font-size:12px;">No nearby records found.</div>`;
+    return;
+  }
+
+  // Pills from context
+  const pills = [];
+  if (context?.country) pills.push(`🌍 ${context.country}`);
+  if (context?.admin) pills.push(`🏷️ ${context.admin}`);
+  if (context?.type) pills.push(`📌 ${context.type}`);
+  if (Number.isFinite(context?.elevation_m)) pills.push(`⛰️ Elev. ${Math.round(context.elevation_m)} m`);
+  if (Number.isFinite(context?.population)) pills.push(`👥 Pop. ${formatNumber(context.population)}`);
+
+  // Government & economy
+  const govRows = [
+    context?.capital ? `<div><b>Capital:</b> ${context.capital}</div>` : '',
+    context?.government_type ? `<div><b>Government:</b> ${context.government_type}</div>` : '',
+    context?.head_of_government ? `<div><b>Head of govt:</b> ${context.head_of_government}</div>` : '',
+    context?.head_of_state ? `<div><b>Head of state:</b> ${context.head_of_state}</div>` : '',
+  ].join('');
+
+  const econRows = [
+    Number.isFinite(context?.gdp) ? `<div><b>GDP:</b> ${formatNumber(context.gdp)}</div>` : '',
+    Number.isFinite(context?.gdp_per_capita) ? `<div><b>GDP per capita:</b> ${formatNumber(context.gdp_per_capita)}</div>` : '',
+  ].join('');
+
+  const climateRow = `<div><b>Climate:</b> ${context?.climate || 'N/A'}</div>`;
+
+  // Top 3 highlights (already ranked); show label + type
+  const highlightsHtml = (highlights || []).map(h => `
+    <div class="wikidata-item">
+      <div class="wikidata-item-title">${h.label || 'Unnamed'}${h.type ? ` — ${h.type}` : ''}</div>
+    </div>
+  `).join('') || '<div style="color:#888;font-size:12px;">No famous locations nearby.</div>';
+
+  box.innerHTML = `
+    <div class="wikidata-pills">
+      ${pills.length ? pills.map(p => `<span class="wikidata-pill">${p}</span>`).join('') 
+                      : '<span style="color:#888;font-size:12px;">No key facts.</span>'}
+    </div>
+    <div class="wikidata-sections" style="margin-top:8px;">
+      <div style="margin-top:6px;"><b>General:</b> ${context?.label || '—'}</div>
+      ${govRows ? `<div style="margin-top:6px;">${govRows}</div>` : ''}
+      ${econRows ? `<div style="margin-top:6px;">${econRows}</div>` : ''}
+      <div style="margin-top:6px;">${climateRow}</div>
+      <div style="margin-top:10px;">
+        <div class="wikidata-header" style="margin:0 0 4px 0;">⭐ Top 3 famous nearby</div>
+        ${highlightsHtml}
+      </div>
+    </div>
+  `;
+}
+
 function openNotePanel(markerId) {
     currentMarker = markerId;
     document.getElementById('noteText').value = notes[markerId] || '';
+
+    // set label UI to that pin's label (default to General)
+    const m = markers.find(m => m.id === markerId);
+    setActiveLabelUI((m && m.label) ? m.label : 'General'); // <— read `label`
     document.getElementById('notesPanel').style.display = 'block';
+
+    const markerObj = markers.find(m => m.id === markerId);
+    const wdBox = document.getElementById('wikidataContent');
+    if (wdBox) wdBox.textContent = 'Loading…';
+    if (markerObj) {
+      fetchWikidataForMarker(markerObj).then(renderWikidataPayload);
+    }
 }
 
 function closeNotePanel() {
@@ -294,20 +393,24 @@ function closeNotePanel() {
 
 async function saveNote() {
   const noteText = document.getElementById('noteText').value.trim();
+  if (!currentMarker) return;
+  const markerObj = markers.find(m => m.id === currentMarker);
+  if (!markerObj) return;
   if (currentMarker) {
-    const markerObj = markers.find(m => m.id === currentMarker);
     if (markerObj && markerObj.dbId) {
       try {
         const response = await fetch(`${API_BASE_URL}/pins/${markerObj.dbId}`, {
           credentials: 'same-origin',
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ note: noteText })
+          body: JSON.stringify({ note: noteText, label: selectedLabel})
         });
         if (!response.ok) {
           const j = await response.json().catch(() => ({}));
           throw new Error(j.message || 'Failed to update note');
         }
+        // reflect on client
+        markerObj.label = selectedLabel;
       } catch (error) {
         alert(error.message);       // <-- surface the error
         return;                     // <-- don’t update local state on failure
@@ -368,8 +471,9 @@ function updateSidebar() {
         const location = pin.locationName || `${pin.position.lat().toFixed(4)}, ${pin.position.lng().toFixed(4)}`;
         const noteText = pin.note || 'No note added';
         const noteClass = pin.note ? '' : ' empty';
+        const categoryBadge = markerObj.label ? `<span class="pin-cat" style="font-size:11px; padding:2px 6px; border:1px solid #e5e7eb; border-radius:12px; margin-left:6px;">${markerObj.label}</span>` : '';
         pinItem.innerHTML = `
-            <div class="pin-location">📍 ${location}</div>
+            <div class="pin-location">📍 ${location} ${categoryBadge}</div>
             <div class="pin-note${noteClass}">${noteText}</div>
             <div class="pin-date">${new Date().toLocaleDateString()}</div>
             <div style="font-size:11px;color:#888;">${pin.region ? pin.region + ', ' : ''}${pin.country || ''}</div>
@@ -427,80 +531,119 @@ document.addEventListener('DOMContentLoaded', function() {
     const insertBeforeNode = pinsList || sidebar.firstChild;
 
     // avoid adding twice
-    if (!document.getElementById('locationSearchWrapper')) {
-        const locationSearchDiv = document.createElement('div');
-        locationSearchDiv.id = 'locationSearchWrapper';
-        locationSearchDiv.style.display = 'flex';
-        locationSearchDiv.style.gap = '8px';
-        locationSearchDiv.style.marginBottom = '10px';
+    // if (!document.getElementById('locationSearchWrapper')) {
+    //     const locationSearchDiv = document.createElement('div');
+    //     locationSearchDiv.id = 'locationSearchWrapper';
+    //     locationSearchDiv.style.display = 'flex';
+    //     locationSearchDiv.style.gap = '8px';
+    //     locationSearchDiv.style.marginBottom = '10px';
 
-        const input = document.createElement('input');
-        input.id = 'locationSearch';
-        input.type = 'text';
-        input.placeholder = 'Search by location name...';
-        input.style.flex = '1';
-        input.style.padding = '8px';
-        input.style.borderRadius = '4px';
-        input.style.border = '1px solid #ccc';
+    //     const input = document.createElement('input');
+    //     input.id = 'locationSearch';
+    //     input.type = 'text';
+    //     input.placeholder = 'Search by location name...';
+    //     input.style.flex = '1';
+    //     input.style.padding = '8px';
+    //     input.style.borderRadius = '4px';
+    //     input.style.border = '1px solid #ccc';
 
-        const btn = document.createElement('button');
-        btn.id = 'locationSearchBtn';
-        btn.type = 'button'; // prevent accidental form submit
-        btn.textContent = 'Search';
-        btn.style.padding = '8px 12px';
-        btn.style.borderRadius = '4px';
-        btn.style.border = 'none';
-        btn.style.background = '#4285f4';
-        btn.style.color = 'white';
-        btn.style.cursor = 'pointer';
+    //     const btn = document.createElement('button');
+    //     btn.id = 'locationSearchBtn';
+    //     btn.type = 'button'; // prevent accidental form submit
+    //     btn.textContent = 'Search';
+    //     btn.style.padding = '8px 12px';
+    //     btn.style.borderRadius = '4px';
+    //     btn.style.border = 'none';
+    //     btn.style.background = '#4285f4';
+    //     btn.style.color = 'white';
+    //     btn.style.cursor = 'pointer';
 
-        locationSearchDiv.appendChild(input);
-        locationSearchDiv.appendChild(btn);
+    //     locationSearchDiv.appendChild(input);
+    //     locationSearchDiv.appendChild(btn);
 
-        if (insertBeforeNode && insertBeforeNode.parentNode) {
-            insertBeforeNode.parentNode.insertBefore(locationSearchDiv, insertBeforeNode);
-        } else {
-            sidebar.insertBefore(locationSearchDiv, sidebar.firstChild);
-        }
-    }
+    //     if (insertBeforeNode && insertBeforeNode.parentNode) {
+    //         insertBeforeNode.parentNode.insertBefore(locationSearchDiv, insertBeforeNode);
+    //     } else {
+    //         sidebar.insertBefore(locationSearchDiv, sidebar.firstChild);
+    //     }
+    // }
 
     // search function - runs on Enter or button press
+    // async function searchByLocationName() {
+    //         const query = (document.getElementById('locationSearch') || {}).value || '';
+    //         const trimmed = query.trim();
+    //         if (!trimmed) {
+    //             // empty => reload all pins (loadPins already clears markers)
+    //             await loadPins();
+    //             return;
+    //         }
+
+    //         try {
+    //             // call backend search endpoint
+    //             const url = `${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(trimmed)}`;
+    //             console.log('Searching pins:', url);
+    //             const response = await fetch(url);
+    //             if (!response.ok) throw new Error(`Search request failed: ${response.status}`);
+    //             const pins = await response.json();
+
+    //             // clear existing markers from map and local state
+    //             markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
+    //             markers = [];
+    //             notes = {};
+    //             labels = {};
+
+    //             // add returned pins as existing pins (addPin will set notes and markers)
+    //             for (const pin of pins) {
+    //                 const location = { lat: pin.latitude, lng: pin.longitude };
+    //                 // coerce id inside addPin
+    //                 await addPin(location, pin);
+    //             }
+
+    //             // show only the search results in the sidebar (don't call updateSidebar here,
+    //             // because updateSidebar would re-render all markers and overwrite the search list)
+    //             showLocationNames(pins);
+    //         } catch (err) {
+    //             console.error('Error during location search:', err);
+    //         }
+    //     }
+
     async function searchByLocationName() {
-            const query = (document.getElementById('locationSearch') || {}).value || '';
-            const trimmed = query.trim();
-            if (!trimmed) {
-                // empty => reload all pins (loadPins already clears markers)
-                await loadPins();
-                return;
-            }
-
-            try {
-                // call backend search endpoint
-                const url = `${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(trimmed)}`;
-                console.log('Searching pins:', url);
-                const response = await fetch(url, { credentials: 'same-origin' });
-                if (!response.ok) throw new Error(`Search request failed: ${response.status}`);
-                const pins = await response.json();
-
-                // clear existing markers from map and local state
-                markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
-                markers = [];
-                notes = {};
-
-                // add returned pins as existing pins (addPin will set notes and markers)
-                for (const pin of pins) {
-                    const location = { lat: pin.latitude, lng: pin.longitude };
-                    // coerce id inside addPin
-                    await addPin(location, pin);
-                }
-
-                // show only the search results in the sidebar (don't call updateSidebar here,
-                // because updateSidebar would re-render all markers and overwrite the search list)
-                showLocationNames(pins);
-            } catch (err) {
-                console.error('Error during location search:', err);
-            }
+        const query = (document.getElementById('locationSearch') || {}).value || '';
+        const trimmed = query.trim();
+        if (!trimmed) {
+            // empty => reload all pins (loadPins already clears markers)
+            await loadPins();
+            return;
         }
+
+        try {
+            // call backend search endpoint
+            const url = `${API_BASE_URL}/pins/search?locationName=${encodeURIComponent(trimmed)}`;
+            console.log('Searching pins:', url);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Search request failed: ${response.status}`);
+            const pins = await response.json();
+
+            // clear existing markers from map and local state
+            markers.forEach(m => { try { m.marker.setMap(null); } catch (e) {} });
+            markers = [];
+            notes = {};
+            labels = {};
+
+            // add returned pins as existing pins (addPin will set notes and markers)
+            for (const pin of pins) {
+                const location = { lat: pin.latitude, lng: pin.longitude };
+                // coerce id inside addPin
+                await addPin(location, pin);
+            }
+
+            // show only the search results in the sidebar (don't call updateSidebar here,
+            // because updateSidebar would re-render all markers and overwrite the search list)
+            showLocationNames(pins);
+        } catch (err) {
+            console.error('Error during location search:', err);
+        }
+    }
 
     // display matching location names in the sidebar container
     function showLocationNames(pins) {
@@ -581,7 +724,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 searchByLocationName();
             }
         });
-    }
+    };
+    // preset/category buttons
+  document.querySelectorAll('.label-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const raw = btn.dataset.label;
+      const label = normalizePresetLabel(raw);
+      // For custom label pills we’ll set data-label-value instead (handled above)
+      setActiveLabelUI(label);
+    });
+  });
+
+  // custom label add
+  const addBtn = document.getElementById('addCustomLabelBtn');
+  const input  = document.getElementById('customLabelInput');
+  const customWrap = document.getElementById('customLabels');
+
+  if (addBtn && input && customWrap) {
+    addBtn.addEventListener('click', async () => {
+      const name = (input.value || '').trim();
+      if (!name) return;
+      if (name.length > 30) { alert('Label too long (max 30)'); return; }
+
+      try {
+        const r = await fetch('/api/labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ name })
+        });
+        if (!r.ok) throw new Error((await r.json()).error || 'Failed to save label');
+        input.value = '';
+        await loadCustomLabels(); // refresh list
+        setActiveLabelUI(name);
+      } catch (e) {
+        alert(e.message);
+      }
+    });
+  };
 });
 
 
@@ -765,4 +945,71 @@ function updatePinsHeader(email) {
   const el = document.getElementById('pins-header'); // re-query in case DOM changed
   if (!el) return; // guard
   el.textContent = email ? `📍 ${email}'s Pins` : '📍 Your Pins';
+}
+
+function setActiveLabelUI(label) {
+  selectedLabel = label;
+  document.querySelectorAll('.label-btn').forEach(btn => {
+    const v = btn.dataset.labelValue || btn.dataset.label; // support both
+    btn.classList.toggle('active', (v || '').toLowerCase() === label.toLowerCase());
+    if (btn.classList.contains('active')) {
+      btn.style.outline = '2px solid #111827';
+    } else {
+      btn.style.outline = 'none';
+    }
+  });
+}
+
+function normalizePresetLabel(key) {
+  // map your lower-case data-labels to title case used for storage
+  switch ((key || '').toLowerCase()) {
+    case 'geology': return 'Geology';
+    case 'climate': return 'Climate';
+    case 'demographic': return 'Demographic';
+    case 'culture': return 'Culture';
+    case 'house_market': return 'House Market';
+    case 'general': return 'General';
+    default: return key; // for custom labels we store as entered (already title/string)
+  }
+}
+
+
+async function loadCustomLabels() {
+  try {
+    const r = await fetch('/api/labels', { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('Failed to load labels');
+    savedCustomLabels = await r.json();
+    renderCustomLabelChips();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function renderCustomLabelChips() {
+  const wrap = document.getElementById('customLabels');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  if (!savedCustomLabels || savedCustomLabels.length === 0) {
+    wrap.innerHTML = '<div style="color:#6b7280; font-size:12px;">No custom labels yet.</div>';
+    return;
+  }
+
+  savedCustomLabels.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'label-btn';
+    btn.dataset.labelValue = name; // we store the actual persisted value here
+    btn.textContent = name;
+    btn.style.padding = '6px 10px';
+    btn.style.border = '1px solid #e5e7eb';
+    btn.style.borderRadius = '16px';
+    btn.style.cursor = 'pointer';
+    btn.style.background = '#f3f4f6';
+    btn.style.margin = '4px';
+    btn.addEventListener('click', () => setActiveLabelUI(name));
+    wrap.appendChild(btn);
+  });
+
+  // re-apply active outline if needed
+  setActiveLabelUI(selectedLabel);
 }

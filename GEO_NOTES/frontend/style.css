@@ -155,3 +155,220 @@ body {
   background: #ccc;
   color: black;
 }
+
+
+
+/* Label Section Styles */
+.label-section {
+  margin-bottom: 15px;
+}
+
+.label-section h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.label-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.label-btn {
+  padding: 8px 12px;
+  border: 2px solid transparent;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  min-width: 80px;
+  text-align: center;
+}
+
+.label-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.label-btn.selected {
+  border: 3px solid #000000 !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Pin item label styling */
+.pin-label {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  margin-left: 8px;
+  color: white;
+}
+
+.pin-label.geology { background-color: #8B4513; }
+.pin-label.climate { background-color: #4CAF50; }
+.pin-label.demographic { background-color: #2196F3; }
+.pin-label.culture { background-color: #9C27B0; }
+.pin-label.house_market { background-color: #FF9800; }
+.pin-label.general { background-color: #d3d3d3; color: black; }
+
+/* Custom labels in sidebar */
+.pin-label[class*="custom_"] {
+  background-color: #f505c9;
+  color: black;
+}
+
+/* Custom label styling */
+.custom-label-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.custom-label-input {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.custom-label-input input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.custom-label-input button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  background: #4285f4;
+  color: black;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.custom-label-input button:hover {
+  background: #3367d6;
+}
+
+.custom-labels-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.custom-label-btn {
+  padding: 6px 10px;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  background-color: #ffffff;
+  color: black;
+  position: relative;
+}
+
+.custom-label-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.custom-label-btn.selected {
+  border: 3px solid #000000 !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) !important;
+}
+
+.custom-label-btn .remove-btn {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.custom-label-btn .remove-btn:hover {
+  opacity: 1;
+}
+
+/* Search section styling */
+.search-section {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.search-tabs {
+  display: flex;
+  background: #f5f5f5;
+}
+
+.search-tab {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.search-tab:hover {
+  background: #e0e0e0;
+}
+
+.search-tab.active {
+  background: #4285f4;
+  color: white;
+}
+
+.search-content {
+  display: none;
+  padding: 15px;
+  gap: 8px;
+}
+
+.search-content.active {
+  display: flex;
+}
+
+.search-content input,
+.search-content select {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.search-content button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #4285f4;
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.search-content button:hover {
+  background: #3367d6;
+}
+
+/* style.css */
+
+.wikidata-list { margin-top: 6px; }
+.wikidata-item-title { font-weight: 600; }
+
+.wikidata { border: 1px dashed #cfd8dc; background: #fafafa; padding: 10px; border-radius: 8px; margin-bottom: 12px; }
+.wikidata-header { font-weight: 600; margin-bottom: 6px; font-size: 13px; color: #37474f; }
+.wikidata-pill { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid #eceff1; margin:2px 6px 6px 0; font-size:12px; background:#fff; }
+.wikidata-item { border-top:1px solid #eee; padding:6px 0; font-size:13px; }
