@@ -53,7 +53,10 @@ npm install
 ```env
 MONGO_URI=mongodb://localhost:27017/geonotes
 PORT=3001
+
+GOOGLE_API_KEY= YOUR_API_KEY
 ```
+for Google API, go onto Google Map Platform and sign up. 
 
 * Start the server:
 
@@ -77,7 +80,7 @@ npm install
 npm run dev
 ```
 
-Frontend runs at: `http://localhost:5500`
+Frontend runs at: `http://localhost:3001`
 
 ---
 
@@ -98,13 +101,15 @@ Frontend runs at: `http://localhost:5500`
 ---
 
 ## 🔮 Future Improvements
-
+* [ ] Deploy on website
 * [ ] Switch from file-based storage to MongoDB persistence.
 * [ ] Add user authentication and personal pin collections.
 * [ ] Enable sharing pins with friends or exporting them.
 * [ ] Add climate and demographic APIs for richer context.
 
 ---
+![login](login.png)
+![main](main.png)
 
 ## ⚖️ License
 
