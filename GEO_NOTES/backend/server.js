@@ -593,6 +593,123 @@ app.get("/api/shared/:ownerId/search", ensureAuth, async (req, res) => {
   }
 });
 
+
+// Macrostrat API - Geological data
+app.get("/api/macrostrat", async (req, res) => {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) return res.status(400).json({ message: "lat and lng are required" });
+
+    // Get geological units at this location
+    const unitsUrl = `https://macrostrat.org/api/v2/units?lat=${lat}&lng=${lng}&response=long`;
+    const columnsUrl = `https://macrostrat.org/api/v2/columns?lat=${lat}&lng=${lng}`;
+    
+    const [unitsResp, columnsResp] = await Promise.all([
+      fetch(unitsUrl, { headers: { "User-Agent": "GeoNotes/1.0 (educational)" } }),
+      fetch(columnsUrl, { headers: { "User-Agent": "GeoNotes/1.0 (educational)" } })
+    ]);
+
+    if (!unitsResp.ok || !columnsResp.ok) {
+      throw new Error(`Macrostrat API error: ${unitsResp.status} / ${columnsResp.status}`);
+    }
+
+    const unitsData = await unitsResp.json();
+    const columnsData = await columnsResp.json();
+
+    // Process units data - get most relevant geological information
+    const units = (unitsData.success && Array.isArray(unitsData.data) ? unitsData.data : [])
+      .slice(0, 3)
+      .map(unit => ({
+        name: unit.unit_name,
+        age: unit.t_age ? `${unit.t_age} - ${unit.b_age} Ma` : null,
+        lithology: unit.lith?.join(', ') || null,
+        environment: unit.environ?.join(', ') || null,
+        thickness: unit.max_thick ? `${unit.max_thick}m` : null,
+        description: unit.unit_name
+      }));
+
+    const columns = (columnsData.success && Array.isArray(columnsData.data) ? columnsData.data : [])
+      .slice(0, 3)
+      .map(col => ({
+        name: col.col_name,
+        area: col.col_area,
+        group: col.col_group,
+        formation: col.project
+      }));
+
+    res.json({ 
+      success: true,
+      location: { lat: parseFloat(lat), lng: parseFloat(lng) },
+      units,
+      columns,
+      source: "Macrostrat"
+    });
+  } catch (e) {
+    console.error('Macrostrat error:', e);
+    res.status(500).json({ message: e.message, success: false });
+  }
+});
+
+// PBDB API - Paleontological data
+app.get("/api/pbdb", async (req, res) => {
+  try {
+    const { lat, lng, radius = "0.5" } = req.query; // 0.5 degree radius default (~55km)
+    if (!lat || !lng) return res.status(400).json({ message: "lat and lng are required" });
+
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    const radiusNum = parseFloat(radius);
+
+    // Calculate bounding box
+    const latMin = latNum - radiusNum;
+    const latMax = latNum + radiusNum;
+    const lngMin = lngNum - radiusNum;
+    const lngMax = lngNum + radiusNum;
+
+    // Get fossil occurrences near this location
+    const occurrencesUrl = `https://paleobiodb.org/data1.2/occs/list.json?latmin=${latMin}&latmax=${latMax}&lngmin=${lngMin}&lngmax=${lngMax}&show=coords,attr,loc,time,ident&limit=20`;
+
+    const occResp = await fetch(occurrencesUrl, { 
+      headers: { "User-Agent": "GeoNotes/1.0 (educational)" } 
+    });
+
+    if (!occResp.ok) {
+      throw new Error(`PBDB API error: ${occResp.status}`);
+    }
+
+    const occData = await occResp.json();
+
+    // Process fossil occurrences
+    const fossils = (occData.records || []).slice(0, 3).map(occ => ({
+      id: occ.oid,
+      name: occ.tna || occ.idn,
+      age: occ.eag && occ.lag ? `${occ.eag} - ${occ.lag} Ma` : null,
+      period: occ.oei || null,
+      location: occ.cc || occ.sn || null,
+      formation: occ.sfm || null,
+      coords: occ.lat && occ.lng ? { lat: occ.lat, lng: occ.lng } : null
+    }));
+
+    // Extract unique taxa from fossil occurrences
+    const uniqueTaxa = [...new Set(occData.records?.map(occ => occ.tna).filter(Boolean) || [])]
+      .slice(0, 3).map(taxonName => ({
+        name: taxonName,
+        source: "from fossil occurrences"
+      }));
+
+    res.json({
+      success: true,
+      location: { lat: parseFloat(lat), lng: parseFloat(lng), radius: parseFloat(radius) },
+      fossils,
+      taxa: uniqueTaxa,
+      source: "Paleobiology Database"
+    });
+  } catch (e) {
+    console.error('PBDB error:', e);
+    res.status(500).json({ message: e.message, success: false });
+  }
+});
+
 // Start server
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

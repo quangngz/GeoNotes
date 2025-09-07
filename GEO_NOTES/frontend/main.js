@@ -5,7 +5,7 @@ let markers = [];
 let notes = {};
 let labels = {};
 let currentMarker = null;
-let selectedLabel = 'general';
+let selectedLabel = 'General';
 let customLabels = JSON.parse(localStorage.getItem('customLabels') || '[]');
 const API_BASE_URL = '/api';
 const GOOGLE_API_KEY = 'AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0'; // Use your key
@@ -36,7 +36,7 @@ const LABEL_VALUE_MAP = {
   climate: "Climate",
   demographic: "Demographic",
   culture: "Culture",
-  "house_market": "House Market",
+  house_market: "House Market",
   general: "General"
 };
 
@@ -219,6 +219,7 @@ async function addPin(location, existingPin = null) {
         region = existingPin.region || null;
         locationName = existingPin.locationName || existingPin.formatted_address || null;
         label = existingPin.label || 'General'; // <— pick up label from DB
+        labels[markerId] = label;
 
         
         if (existingPin.note) {
@@ -261,7 +262,7 @@ async function addPin(location, existingPin = null) {
             markerId = Date.now().toString();
             dbId = null;
         }
-        labels[markerId] = 'general';
+        labels[markerId] = label;
     }
 
     markers.push({ id: markerId, marker: marker, dbId: dbId, country, region, locationName, label });
@@ -396,6 +397,17 @@ function openNotePanel(markerId) {
     if (markerObj) {
       fetchWikidataForMarker(markerObj).then(renderWikidataPayload);
     }
+    // Initialize loading states
+    const geoBox = document.getElementById('geologicalContent');
+    const fossilBox = document.getElementById('fossilContent');
+    if (geoBox) geoBox.textContent = 'Loading geological data...';
+    if (fossilBox) fossilBox.textContent = 'Loading fossil data...';
+    
+    // Fetch both geological and fossil data
+    if (markerObj) {
+      fetchGeologicalData(markerObj).then(renderGeologicalData);
+      fetchFossilData(markerObj).then(renderFossilData);
+    }
 }
 
 function closeNotePanel() {
@@ -424,6 +436,7 @@ async function saveNote() {
         }
         // reflect on client
         markerObj.label = selectedLabel;
+        labels[markerObj.id] = selectedLabel;
       } catch (error) {
         alert(error.message);       // <-- surface the error
         return;                     // <-- don’t update local state on failure
@@ -620,7 +633,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const labelInfo = getLabelInfo(pin.label || 'general');
 
             div.innerHTML = `
-                <div class="pin-location">📍 ${locationText}<span class="pin-label ${pin.label || 'general'}" style="color:#000"> ${pin.label}</span></div>
+                
+                <div class="pin-location">📍 ${locationText}<span class="pin-cat" style="font-size:11px; padding:2px 6px; border:1px solid #e5e7eb; border-radius:12px; margin-left:6px;"> ${pin.label}</span></div>
                 <div class="pin-note">${escapeHtml(noteText)}</div>
                 <div class="pin-date">${dateText}</div>
                 <div style="font-size:11px;color:#888;">${pin.region ? pin.region + ', ' : ''}${pin.country || ''}</div>
@@ -1032,4 +1046,130 @@ function getLabelInfo(labelType) {
     }
     
     return labelConfig[labelType] || labelConfig.general;
+}
+
+// Fetch geological data from Macrostrat API
+async function fetchGeologicalData(markerObj) {
+  try {
+    const pos = markerObj.marker.getPosition();
+    const url = `${API_BASE_URL}/macrostrat?lat=${pos.lat()}&lng=${pos.lng()}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Macrostrat fetch failed: ${resp.status}`);
+    return await resp.json();
+  } catch (e) {
+    console.error('Geological data error:', e);
+    return { success: false, message: e.message };
+  }
+}
+
+// Fetch fossil data from PBDB API
+async function fetchFossilData(markerObj, radiusKm = 50) {
+  try {
+    const pos = markerObj.marker.getPosition();
+    const url = `${API_BASE_URL}/pbdb?lat=${pos.lat()}&lng=${pos.lng()}&radius=${radiusKm}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`PBDB fetch failed: ${resp.status}`);
+    return await resp.json();
+  } catch (e) {
+    console.error('Fossil data error:', e);
+    return { success: false, message: e.message };
+  }
+}
+
+function formatNumber(n) {
+  return typeof n === 'number' && isFinite(n) ? n.toLocaleString() : null;
+}
+
+// Render geological data from Macrostrat
+function renderGeologicalData(data) {
+  const box = document.getElementById('geologicalContent');
+  if (!box) return;
+
+  if (!data.success || (!data.units?.length && !data.columns?.length)) {
+    box.innerHTML = `<div style="color:#888;font-size:12px;">No geological data found for this location.</div>`;
+    return;
+  }
+
+  // Render geological units
+  const unitsHtml = (data.units || []).map(unit => `
+    <div class="geo-unit">
+      <div class="geo-name"><strong>${unit.name}</strong></div>
+      ${unit.age ? `<div class="geo-age">⏳ Age: ${unit.age}</div>` : ''}
+      ${unit.lithology ? `<div class="geo-lith">🪨 Lithology: ${unit.lithology}</div>` : ''}
+      ${unit.environment ? `<div class="geo-env">🌍 Environment: ${unit.environment}</div>` : ''}
+      ${unit.thickness ? `<div class="geo-thick">📏 Thickness: ${unit.thickness}</div>` : ''}
+    </div>
+  `).join('');
+
+  // Render geological columns
+  const columnsHtml = (data.columns || []).map(col => `
+    <div class="geo-column">
+      <strong>${col.name}</strong>
+      ${col.area ? ` (${col.area} km²)` : ''}
+      ${col.group ? `<br><small>Group: ${col.group}</small>` : ''}
+    </div>
+  `).join('');
+
+  box.innerHTML = `
+    ${unitsHtml ? `<div class="geo-section">
+      <h4>📊 Geological Units</h4>
+      ${unitsHtml}
+    </div>` : ''}
+    ${columnsHtml ? `<div class="geo-section">
+      <h4>📈 Geological Columns</h4>
+      ${columnsHtml}
+    </div>` : ''}
+    <div class="data-source">Data from ${data.source}</div>
+  `;
+}
+
+// Render fossil data from PBDB
+function renderFossilData(data) {
+  const box = document.getElementById('fossilContent');
+  if (!box) return;
+
+  if (!data.success || (!data.fossils?.length && !data.taxa?.length)) {
+    box.innerHTML = `<div style="color:#888;font-size:12px;">No fossil records found within ${data.location?.radius || 50}km.</div>`;
+    return;
+  }
+
+  // Render fossil occurrences
+  const fossilsHtml = (data.fossils || []).slice(0, 6).map(fossil => `
+    <div class="fossil-item">
+      <div class="fossil-name"><strong>${fossil.name || 'Unknown species'}</strong></div>
+      ${fossil.age ? `<div class="fossil-age">⏳ ${fossil.age}</div>` : ''}
+      ${fossil.period ? `<div class="fossil-period">🕰️ ${fossil.period}</div>` : ''}
+      ${fossil.formation ? `<div class="fossil-formation">🏔️ ${fossil.formation}</div>` : ''}
+      ${fossil.location ? `<div class="fossil-location">📍 ${fossil.location}</div>` : ''}
+    </div>
+  `).join('');
+
+  // Render taxa information
+  const taxaHtml = (data.taxa || []).slice(0, 5).map(taxon => `
+    <div class="taxa-item">
+      <strong>${taxon.name}</strong> <em>(${taxon.rank})</em>
+      ${taxon.first_appearance && taxon.last_appearance ? 
+        `<br><small>📅 ${taxon.first_appearance} - ${taxon.last_appearance} Ma</small>` : ''}
+      ${taxon.extant ? '<span class="extant">🟢 Still alive</span>' : '<span class="extinct">⚫ Extinct</span>'}
+    </div>
+  `).join('');
+
+  box.innerHTML = `
+    ${fossilsHtml ? `<div class="fossil-section">
+      <h4>🦴 Fossil Occurrences</h4>
+      ${fossilsHtml}
+    </div>` : ''}
+    ${taxaHtml ? `<div class="fossil-section">
+      <h4>🧬 Taxa Found</h4>
+      ${taxaHtml}
+    </div>` : ''}
+    <div class="data-source">Data from ${data.source}</div>
+  `;
+}
+
+function displayLabel(label) {
+  if (!label) return 'General';
+  // unify to our lookup keys: lowercase + underscores
+  const key = label.toLowerCase().replace(/\s+/g, '_');
+  return LABEL_VALUE_MAP[key] || (label[0].toUpperCase() + label.slice(1));
 }

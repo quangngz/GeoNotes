@@ -88,7 +88,6 @@
   <!-- Map -->
   <div id="map"></div>
 
-  
 
   <!-- Sidebar -->
   <div id="sidebar">
@@ -225,8 +224,19 @@
       <div class="wikidata-header">🔎 Recommended data near this pin</div>
       <div id="wikidataContent" class="wikidata-content">Loading…</div>
     </div>
-    
- 
+
+    <!-- Geological Data from Macrostrat -->
+    <div id="geologicalPanel" class="data-panel">
+      <div class="data-header">🪨 Geological Information</div>
+      <div id="geologicalContent" class="data-content">Loading geological data...</div>
+    </div>
+
+    <!-- Paleontological Data from PBDB -->
+    <div id="fossilPanel" class="data-panel">
+      <div class="data-header">🦕 Fossil Records</div>
+      <div id="fossilContent" class="data-content">Loading fossil data...</div>
+    </div>
+     
 
     <textarea id="noteText" placeholder="Enter your note here..." rows="4"></textarea>
     <div style="text-align: right;">
@@ -235,8 +245,6 @@
       <button id="closeNotePanelBtn">Cancel</button>
     </div>    
   </div>
-
-
   
 
   <!-- Your existing JS map logic -->
