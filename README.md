@@ -110,7 +110,7 @@ Frontend runs at: `http://localhost:3001`
 ---
 ![login](login.png)
 ![main](main.png)
-
+![photo](photo.png)
 ## ⚖️ License
 
 This project is licensed under the **ISC License**.
