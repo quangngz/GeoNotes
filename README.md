@@ -95,11 +95,10 @@ Frontend runs at: `http://localhost:3001`
 ---
 
 ## 📸 Screenshots
-
-*(Add screenshots of the map, sidebar, and notes panel here)*
-
+![login](login.png)
+![main](main.png)
+![photo](photo.png)
 ---
-
 ## 🔮 Future Improvements
 * [ ] Deploy on website
 * [ ] Switch from file-based storage to MongoDB persistence.
@@ -108,9 +107,7 @@ Frontend runs at: `http://localhost:3001`
 * [ ] Add climate and demographic APIs for richer context.
 
 ---
-![login](login.png)
-![main](main.png)
-![photo](photo.png)
+
 ## ⚖️ License
 
 This project is licensed under the **ISC License**.
