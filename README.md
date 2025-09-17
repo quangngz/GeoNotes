@@ -97,7 +97,6 @@ Frontend runs at: `http://localhost:3001`
 ## 📸 Screenshots
 ![login](login.png)
 ![main](main.png)
-![photo](photo.png)
 ---
 ## 🔮 Future Improvements
 * [ ] Deploy on website
