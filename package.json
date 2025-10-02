@@ -7,8 +7,8 @@
     "npm": "9.x"
   },
   "scripts": {
-    "start": "cd GEO_NOTES/backend && npm install && node server.js",
-    "heroku-postbuild": "cd GEO_NOTES/backend && npm install",
-    "dev": "cd GEO_NOTES/backend && npm install && node server.js"
+    "start": "node GEO_NOTES/backend/server.js",
+    "heroku-postbuild": "npm ci --prefix GEO_NOTES/backend",
+    "dev": "node GEO_NOTES/backend/server.js"
   }
 }
