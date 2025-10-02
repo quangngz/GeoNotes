@@ -89,7 +89,7 @@ function ensureAuth(req, res, next) {
   res.status(401).json({ error: "Unauthorized" });
 }
 
-app.get("/config", (req, res) => {
+app.get("/config", ensureAuth, (req, res) => {
   res.json({ apiUrl: process.env.GOOGLE_MAPS_API_KEY});
 });
 
