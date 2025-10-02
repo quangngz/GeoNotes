@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
-import { fileURLToPath } from 'url';
+import { fileURLToPath } from "url";
 
 import bcrypt from "bcrypt";
 import session from "express-session";
@@ -20,7 +20,7 @@ import { connectDB } from "./models/index.js";
 dotenv.config();
 const app = express();
 
-connectDB().catch(err => {
+connectDB().catch((err) => {
   console.error("Failed to connect to MongoDB", err);
   process.exit(1);
 });
@@ -34,8 +34,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Serve static files from frontend directory
-app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.static(path.join(__dirname, "../frontend")));
 
+const mongoUri =
+  process.env.NODE_ENV === "production"
+    ? process.env.MONGODB_URI
+    : process.env.MONGODB_URI_LOCAL || process.env.MONGODB_URI;
 
 // Sessions (Mongo-backed)
 app.use(
@@ -45,9 +49,9 @@ app.use(
     saveUninitialized: false,
     cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7 days
     store: MongoStore.create({
-      mongoUrl: process.env.MONGO_URI,
-      collectionName: "sessions"
-    })
+      mongoUrl: mongoUri,
+      collectionName: "sessions",
+    }),
   })
 );
 
@@ -93,7 +97,8 @@ function ensureAuth(req, res, next) {
 app.get("/api/geocode", ensureAuth, async (req, res) => {
   try {
     const { lat, lng } = req.query;
-    if (!lat || !lng) return res.status(400).json({ error: "lat and lng are required" });
+    if (!lat || !lng)
+      return res.status(400).json({ error: "lat and lng are required" });
 
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
     const response = await fetch(url);
@@ -101,7 +106,7 @@ app.get("/api/geocode", ensureAuth, async (req, res) => {
 
     res.json(data);
   } catch (e) {
-    console.error('Geocoding error:', e);
+    console.error("Geocoding error:", e);
     res.status(500).json({ error: "Failed to fetch geocoding data" });
   }
 });
@@ -109,14 +114,16 @@ app.get("/api/geocode", ensureAuth, async (req, res) => {
 // ----- Auth Routes -----
 app.post("/api/register", async (req, res) => {
   const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+  if (!email || !password)
+    return res.status(400).json({ error: "Email and password required" });
 
   try {
     const hash = await bcrypt.hash(password, 10);
     const created = await User.create({ email, password_hash: hash });
     // Auto-login
     req.login({ id: created._id.toString(), email: created.email }, (err) => {
-      if (err) return res.status(201).json({ id: created._id, email: created.email });
+      if (err)
+        return res.status(201).json({ id: created._id, email: created.email });
       res.json({ id: created._id, email: created.email });
     });
   } catch (e) {
@@ -133,7 +140,7 @@ app.post("/api/login", passport.authenticate("local"), (req, res) => {
 });
 
 app.post("/api/logout", (req, res, next) => {
-  req.logout(err => {
+  req.logout((err) => {
     if (err) return next(err);
     res.json({ ok: true });
   });
@@ -144,18 +151,18 @@ app.get("/api/me", (req, res) => {
   res.json(req.user);
 });
 
-
 // server.js (helpers) — add 'label' to pickWritableFields
 const pickWritableFields = (body) => {
   const w = {};
-  if (body.latitude !== undefined)  w.latitude  = Number(body.latitude);
+  if (body.latitude !== undefined) w.latitude = Number(body.latitude);
   if (body.longitude !== undefined) w.longitude = Number(body.longitude);
 
-  if (body.note !== undefined)         w.note = String(body.note);
-  if (body.country !== undefined)      w.country = String(body.country);
-  if (body.region !== undefined)       w.region = String(body.region);
-  if (body.locationName !== undefined) w.locationName = String(body.locationName);
-  if (body.label !== undefined)        w.label = String(body.label).trim(); // <— NEW
+  if (body.note !== undefined) w.note = String(body.note);
+  if (body.country !== undefined) w.country = String(body.country);
+  if (body.region !== undefined) w.region = String(body.region);
+  if (body.locationName !== undefined)
+    w.locationName = String(body.locationName);
+  if (body.label !== undefined) w.label = String(body.label).trim(); // <— NEW
   return w;
 };
 
@@ -171,7 +178,7 @@ const toClient = (doc) => ({
   locationName: doc.locationName,
   note: doc.note,
   createdAt: doc.createdAt,
-  updatedAt: doc.updatedAt
+  updatedAt: doc.updatedAt,
 });
 
 // Get all pins for the logged-in user
@@ -191,12 +198,14 @@ app.post("/api/pins", ensureAuth, async (req, res) => {
   try {
     const { latitude, longitude, user_id: targetUserId } = req.body || {};
     if (latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ message: "latitude and longitude are required" });
+      return res
+        .status(400)
+        .json({ message: "latitude and longitude are required" });
     }
 
     const data = pickWritableFields(req.body);
     data.title = data.title ?? "Untitled";
-    data.note  = data.note  ?? "";
+    data.note = data.note ?? "";
     data.label = (data.label && data.label.trim()) || "General"; // <— default
 
     if (targetUserId && targetUserId !== req.user.id) {
@@ -204,10 +213,12 @@ app.post("/api/pins", ensureAuth, async (req, res) => {
       const hasEditor = await Share.exists({
         owner_id: targetUserId,
         member_id: req.user.id,
-        role: 'editor'
+        role: "editor",
       });
       if (!hasEditor) {
-        return res.status(403).json({ message: "Not allowed to add pins to this map" });
+        return res
+          .status(403)
+          .json({ message: "Not allowed to add pins to this map" });
       }
       data.user_id = targetUserId;
     } else {
@@ -224,15 +235,18 @@ app.post("/api/pins", ensureAuth, async (req, res) => {
 
 // Get my saved custom labels
 app.get("/api/labels", ensureAuth, async (req, res) => {
-  const rows = await Label.find({ user_id: req.user.id }).sort({ name: 1 }).lean();
-  res.json(rows.map(r => r.name));
+  const rows = await Label.find({ user_id: req.user.id })
+    .sort({ name: 1 })
+    .lean();
+  res.json(rows.map((r) => r.name));
 });
 
 // Add a custom label (idempotent)
 app.post("/api/labels", ensureAuth, async (req, res) => {
   const name = (req.body?.name || "").trim();
   if (!name) return res.status(400).json({ error: "Label name is required" });
-  if (name.length > 30) return res.status(400).json({ error: "Label too long (max 30)" });
+  if (name.length > 30)
+    return res.status(400).json({ error: "Label too long (max 30)" });
 
   await Label.updateOne(
     { user_id: req.user.id, name },
@@ -268,18 +282,19 @@ app.put("/api/pins/:id", ensureAuth, async (req, res) => {
       isEditor = await Share.exists({
         owner_id: pin.user_id,
         member_id: req.user.id,
-        role: 'editor'                     // must be editor to modify
+        role: "editor", // must be editor to modify
       });
     }
 
     if (!isOwner && !isEditor) {
-      return res.status(403).json({ message: "Not allowed to update this pin" });
+      return res
+        .status(403)
+        .json({ message: "Not allowed to update this pin" });
     }
 
     Object.assign(pin, update);
     const saved = await pin.save();
     return res.json(toClient(saved));
-
   } catch (error) {
     console.error(error);
     res.status(400).json({ message: error.message || "Failed to update pin" });
@@ -289,8 +304,12 @@ app.put("/api/pins/:id", ensureAuth, async (req, res) => {
 // Delete a pin (only if it belongs to the logged-in user)
 app.delete("/api/pins/:id", ensureAuth, async (req, res) => {
   try {
-    const result = await Pin.deleteOne({ _id: req.params.id, user_id: req.user.id });
-    if (!result.deletedCount) return res.status(404).json({ message: "Pin not found" });
+    const result = await Pin.deleteOne({
+      _id: req.params.id,
+      user_id: req.user.id,
+    });
+    if (!result.deletedCount)
+      return res.status(404).json({ message: "Pin not found" });
     res.json({ message: "Pin deleted successfully" });
   } catch (error) {
     console.error(error);
@@ -330,10 +349,10 @@ app.get("/api/shared", ensureAuth, async (req, res) => {
       .populate({ path: "owner_id", select: "_id email" })
       .lean();
 
-    const owners = shares.map(s => ({
+    const owners = shares.map((s) => ({
       owner_id: s.owner_id._id,
       owner_email: s.owner_id.email,
-      role: s.role
+      role: s.role,
     }));
     res.json(owners);
   } catch (e) {
@@ -346,18 +365,32 @@ app.get("/api/shared", ensureAuth, async (req, res) => {
 app.get("/api/shared/:ownerId/pins", ensureAuth, async (req, res) => {
   try {
     const { ownerId } = req.params;
-    const hasAccess = await Share.exists({ owner_id: ownerId, member_id: req.user.id });
-    if (!hasAccess) return res.status(403).json({ error: "No access to this map" });
+    const hasAccess = await Share.exists({
+      owner_id: ownerId,
+      member_id: req.user.id,
+    });
+    if (!hasAccess)
+      return res.status(403).json({ error: "No access to this map" });
 
-    const pins = await Pin.find({ user_id: ownerId }).sort({ createdAt: -1 }).lean();
-    res.json(pins.map(p => ({
-      _id: p._id, user_id: p.user_id,
-      latitude: p.latitude, longitude: p.longitude,
-      title: p.title, note: p.note,
-      label: p.label,
-      country: p.country, region: p.region, locationName: p.locationName,
-      createdAt: p.createdAt, updatedAt: p.updatedAt
-    })));
+    const pins = await Pin.find({ user_id: ownerId })
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(
+      pins.map((p) => ({
+        _id: p._id,
+        user_id: p.user_id,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        title: p.title,
+        note: p.note,
+        label: p.label,
+        country: p.country,
+        region: p.region,
+        locationName: p.locationName,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+      }))
+    );
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch shared pins" });
@@ -386,12 +419,14 @@ app.get("/api/shares", ensureAuth, async (req, res) => {
       .populate({ path: "member_id", select: "_id email" })
       .lean();
 
-    res.json(shares.map(s => ({
-      member_id: s.member_id._id,
-      email: s.member_id.email,
-      role: s.role,
-      createdAt: s.createdAt
-    })));
+    res.json(
+      shares.map((s) => ({
+        member_id: s.member_id._id,
+        email: s.member_id.email,
+        role: s.role,
+        createdAt: s.createdAt,
+      }))
+    );
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to load shares" });
@@ -401,7 +436,8 @@ app.get("/api/shares", ensureAuth, async (req, res) => {
 app.get("/api/wikidata", async (req, res) => {
   try {
     const { lat, lng, radius = "5" } = req.query;
-    if (!lat || !lng) return res.status(400).json({ message: "lat and lng are required" });
+    if (!lat || !lng)
+      return res.status(400).json({ message: "lat and lng are required" });
 
     const contextSparql = `
       SELECT ?place ?placeLabel ?type ?typeLabel ?adminLabel ?countryLabel
@@ -410,7 +446,9 @@ app.get("/api/wikidata", async (req, res) => {
       WHERE {
         SERVICE wikibase:around {
           ?place wdt:P625 ?coord .
-          bd:serviceParam wikibase:center "Point(${Number(lng)} ${Number(lat)})"^^geo:wktLiteral ;
+          bd:serviceParam wikibase:center "Point(${Number(lng)} ${Number(
+      lat
+    )})"^^geo:wktLiteral ;
                           wikibase:radius "${radius}" .
         }
         ?place wdt:P31 ?type .
@@ -443,7 +481,9 @@ app.get("/api/wikidata", async (req, res) => {
       SELECT ?item ?itemLabel ?typeLabel ?links WHERE {
         SERVICE wikibase:around {
           ?item wdt:P625 ?coord .
-          bd:serviceParam wikibase:center "Point(${Number(lng)} ${Number(lat)})"^^geo:wktLiteral ;
+          bd:serviceParam wikibase:center "Point(${Number(lng)} ${Number(
+      lat
+    )})"^^geo:wktLiteral ;
                           wikibase:radius "${radius}" .
         }
         OPTIONAL { ?item wdt:P31 ?type. }
@@ -459,37 +499,46 @@ app.get("/api/wikidata", async (req, res) => {
     `;
 
     const run = async (sparql) => {
-      const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`;
-      const resp = await fetch(url, { headers: { "User-Agent": "GeoNotes/1.0 (student project)" } });
+      const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(
+        sparql
+      )}`;
+      const resp = await fetch(url, {
+        headers: { "User-Agent": "GeoNotes/1.0 (student project)" },
+      });
       if (!resp.ok) throw new Error(`WDQS error: ${resp.status}`);
       return resp.json();
     };
 
-    const [contextJson, highlightsJson] = await Promise.all([run(contextSparql), run(highlightsSparql)]);
+    const [contextJson, highlightsJson] = await Promise.all([
+      run(contextSparql),
+      run(highlightsSparql),
+    ]);
     const b = contextJson.results?.bindings?.[0];
 
-    const context = b ? {
-      id: b.place?.value,
-      label: b.placeLabel?.value,
-      type: b.typeLabel?.value || null,
-      admin: b.adminLabel?.value || null,
-      country: b.countryLabel?.value || null,
-      population: b.population ? Number(b.population.value) : null,
-      elevation_m: b.elev ? Number(b.elev.value) : null,
-      capital: b.capitalLabel?.value || null,
-      government_type: b.govTypeLabel?.value || null,
-      head_of_government: b.headGovLabel?.value || null,
-      head_of_state: b.headStateLabel?.value || null,
-      gdp: b.gdp ? Number(b.gdp.value) : null,
-      gdp_per_capita: b.gdpPerCapita ? Number(b.gdpPerCapita.value) : null,
-      climate: b.koppenLabel?.value || null
-    } : null;
+    const context = b
+      ? {
+          id: b.place?.value,
+          label: b.placeLabel?.value,
+          type: b.typeLabel?.value || null,
+          admin: b.adminLabel?.value || null,
+          country: b.countryLabel?.value || null,
+          population: b.population ? Number(b.population.value) : null,
+          elevation_m: b.elev ? Number(b.elev.value) : null,
+          capital: b.capitalLabel?.value || null,
+          government_type: b.govTypeLabel?.value || null,
+          head_of_government: b.headGovLabel?.value || null,
+          head_of_state: b.headStateLabel?.value || null,
+          gdp: b.gdp ? Number(b.gdp.value) : null,
+          gdp_per_capita: b.gdpPerCapita ? Number(b.gdpPerCapita.value) : null,
+          climate: b.koppenLabel?.value || null,
+        }
+      : null;
 
-    const highlights = (highlightsJson.results?.bindings || []).map(x => ({
+    const highlights = (highlightsJson.results?.bindings || []).map((x) => ({
       id: x.item?.value,
       label: x.itemLabel?.value,
       type: x.typeLabel?.value || null,
-      sitelinks: x.links ? Number(x.links.value) : null
+      sitelinks: x.links ? Number(x.links.value) : null,
     }));
 
     res.json({ context, highlights });
@@ -498,7 +547,6 @@ app.get("/api/wikidata", async (req, res) => {
     res.status(500).json({ message: e.message });
   }
 });
-
 
 app.get("/api/pins/search", ensureAuth, async (req, res) => {
   try {
@@ -517,12 +565,14 @@ app.get("/api/pins/search", ensureAuth, async (req, res) => {
         { country: regex },
         { region: regex },
         { note: regex },
-        { label: regex }
+        { label: regex },
       ];
     }
 
     if (!q.$or && !q.label) {
-      return res.status(400).json({ message: "Provide label or text to search" });
+      return res
+        .status(400)
+        .json({ message: "Provide label or text to search" });
     }
 
     const pins = await Pin.find(q).sort({ createdAt: -1 }).lean();
@@ -533,14 +583,17 @@ app.get("/api/pins/search", ensureAuth, async (req, res) => {
   }
 });
 
-
 app.get("/api/shared/:ownerId/search", ensureAuth, async (req, res) => {
   try {
     const { ownerId } = req.params;
     const { locationName, label } = req.query;
 
-    const hasAccess = await Share.exists({ owner_id: ownerId, member_id: req.user.id });
-    if (!hasAccess) return res.status(403).json({ error: "No access to this map" });
+    const hasAccess = await Share.exists({
+      owner_id: ownerId,
+      member_id: req.user.id,
+    });
+    if (!hasAccess)
+      return res.status(403).json({ error: "No access to this map" });
 
     const q = { user_id: ownerId };
 
@@ -555,12 +608,14 @@ app.get("/api/shared/:ownerId/search", ensureAuth, async (req, res) => {
         { country: regex },
         { region: regex },
         { note: regex },
-        { label: regex }
+        { label: regex },
       ];
     }
 
     if (!q.$or && !q.label) {
-      return res.status(400).json({ message: "Provide label or text to search" });
+      return res
+        .status(400)
+        .json({ message: "Provide label or text to search" });
     }
 
     const pins = await Pin.find(q).sort({ createdAt: -1 }).lean();
@@ -571,32 +626,41 @@ app.get("/api/shared/:ownerId/search", ensureAuth, async (req, res) => {
   }
 });
 
-
 // Macrostrat API - Geological data
 app.get("/api/macrostrat", async (req, res) => {
   try {
     const { lat, lng } = req.query;
-    if (!lat || !lng) return res.status(400).json({ message: "lat and lng are required" });
+    if (!lat || !lng)
+      return res.status(400).json({ message: "lat and lng are required" });
 
     // Get geological units at this location
     const unitsUrl = `https://macrostrat.org/api/v2/units?lat=${lat}&lng=${lng}&response=long`;
     const columnsUrl = `https://macrostrat.org/api/v2/columns?lat=${lat}&lng=${lng}`;
-    
+
     const [unitsResp, columnsResp] = await Promise.all([
-      fetch(unitsUrl, { headers: { "User-Agent": "GeoNotes/1.0 (educational)" } }),
-      fetch(columnsUrl, { headers: { "User-Agent": "GeoNotes/1.0 (educational)" } })
+      fetch(unitsUrl, {
+        headers: { "User-Agent": "GeoNotes/1.0 (educational)" },
+      }),
+      fetch(columnsUrl, {
+        headers: { "User-Agent": "GeoNotes/1.0 (educational)" },
+      }),
     ]);
 
     if (!unitsResp.ok || !columnsResp.ok) {
-      throw new Error(`Macrostrat API error: ${unitsResp.status} / ${columnsResp.status}`);
+      throw new Error(
+        `Macrostrat API error: ${unitsResp.status} / ${columnsResp.status}`
+      );
     }
 
     const unitsData = await unitsResp.json();
     const columnsData = await columnsResp.json();
 
-    const unitsRaw   = Array.isArray(unitsData?.success?.data)   ? unitsData.success.data   : [];
-    const columnsRaw = Array.isArray(columnsData?.success?.data) ? columnsData.success.data : [];
-  
+    const unitsRaw = Array.isArray(unitsData?.success?.data)
+      ? unitsData.success.data
+      : [];
+    const columnsRaw = Array.isArray(columnsData?.success?.data)
+      ? columnsData.success.data
+      : [];
 
     // Process units data - get most relevant geological information
     // const units = (unitsData.success && Array.isArray(unitsData.data) ? unitsData.data : [])
@@ -609,35 +673,41 @@ app.get("/api/macrostrat", async (req, res) => {
     //     thickness: unit.max_thick ? `${unit.max_thick}m` : null,
     //     description: unit.unit_name
     //   }));
-    
-    const units = unitsRaw.slice(0, 3).map(unit => ({
-      name: unit.unit_name,
-      age: (unit.t_age ?? null) && (unit.b_age ?? null) ? `${unit.t_age} - ${unit.b_age} Ma` : null,
-      lithology: Array.isArray(unit.lith)    ? unit.lith.join(', ')    : null,
-      environment: Array.isArray(unit.environ) ? unit.environ.join(', ') : null,
-      thickness: unit.max_thick ? `${unit.max_thick}m` : null,
-      description: unit.unit_name
-    }));
-    
 
-    const columns = (columnsData.success && Array.isArray(columnsData.data) ? columnsData.data : [])
+    const units = unitsRaw.slice(0, 3).map((unit) => ({
+      name: unit.unit_name,
+      age:
+        (unit.t_age ?? null) && (unit.b_age ?? null)
+          ? `${unit.t_age} - ${unit.b_age} Ma`
+          : null,
+      lithology: Array.isArray(unit.lith) ? unit.lith.join(", ") : null,
+      environment: Array.isArray(unit.environ) ? unit.environ.join(", ") : null,
+      thickness: unit.max_thick ? `${unit.max_thick}m` : null,
+      description: unit.unit_name,
+    }));
+
+    const columns = (
+      columnsData.success && Array.isArray(columnsData.data)
+        ? columnsData.data
+        : []
+    )
       .slice(0, 3)
-      .map(col => ({
+      .map((col) => ({
         name: col.col_name,
         area: col.col_area,
         group: col.col_group,
-        formation: col.project
+        formation: col.project,
       }));
 
-    res.json({ 
+    res.json({
       success: true,
       location: { lat: parseFloat(lat), lng: parseFloat(lng) },
       units,
       columns,
-      source: "Macrostrat"
+      source: "Macrostrat",
     });
   } catch (e) {
-    console.error('Macrostrat error:', e);
+    console.error("Macrostrat error:", e);
     res.status(500).json({ message: e.message, success: false });
   }
 });
@@ -646,7 +716,8 @@ app.get("/api/macrostrat", async (req, res) => {
 app.get("/api/pbdb", async (req, res) => {
   try {
     const { lat, lng, radius = "0.5" } = req.query; // 0.5 degree radius default (~55km)
-    if (!lat || !lng) return res.status(400).json({ message: "lat and lng are required" });
+    if (!lat || !lng)
+      return res.status(400).json({ message: "lat and lng are required" });
 
     const latNum = parseFloat(lat);
     const lngNum = parseFloat(lng);
@@ -661,8 +732,8 @@ app.get("/api/pbdb", async (req, res) => {
     // Get fossil occurrences near this location
     const occurrencesUrl = `https://paleobiodb.org/data1.2/occs/list.json?latmin=${latMin}&latmax=${latMax}&lngmin=${lngMin}&lngmax=${lngMax}&show=coords,attr,loc,time,ident&limit=20`;
 
-    const occResp = await fetch(occurrencesUrl, { 
-      headers: { "User-Agent": "GeoNotes/1.0 (educational)" } 
+    const occResp = await fetch(occurrencesUrl, {
+      headers: { "User-Agent": "GeoNotes/1.0 (educational)" },
     });
 
     if (!occResp.ok) {
@@ -672,47 +743,56 @@ app.get("/api/pbdb", async (req, res) => {
     const occData = await occResp.json();
 
     // Process fossil occurrences
-    const fossils = (occData.records || []).slice(0, 3).map(occ => ({
+    const fossils = (occData.records || []).slice(0, 3).map((occ) => ({
       id: occ.oid,
       name: occ.tna || occ.idn,
       age: occ.eag && occ.lag ? `${occ.eag} - ${occ.lag} Ma` : null,
       period: occ.oei || null,
       location: occ.cc || occ.sn || null,
       formation: occ.sfm || null,
-      coords: occ.lat && occ.lng ? { lat: occ.lat, lng: occ.lng } : null
+      coords: occ.lat && occ.lng ? { lat: occ.lat, lng: occ.lng } : null,
     }));
 
     // Extract unique taxa from fossil occurrences
-    const uniqueTaxa = [...new Set(occData.records?.map(occ => occ.tna).filter(Boolean) || [])]
-      .slice(0, 3).map(taxonName => ({
+    const uniqueTaxa = [
+      ...new Set(occData.records?.map((occ) => occ.tna).filter(Boolean) || []),
+    ]
+      .slice(0, 3)
+      .map((taxonName) => ({
         name: taxonName,
-        source: "from fossil occurrences"
+        source: "from fossil occurrences",
       }));
 
     res.json({
       success: true,
-      location: { lat: parseFloat(lat), lng: parseFloat(lng), radius: parseFloat(radius) },
+      location: {
+        lat: parseFloat(lat),
+        lng: parseFloat(lng),
+        radius: parseFloat(radius),
+      },
       fossils,
       taxa: uniqueTaxa,
-      source: "Paleobiology Database"
+      source: "Paleobiology Database",
     });
   } catch (e) {
-    console.error('PBDB error:', e);
+    console.error("PBDB error:", e);
     res.status(500).json({ message: e.message, success: false });
   }
 });
 
 // Start server
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const server = app.listen(PORT, () =>
+  console.log(`Server running on port ${PORT}`)
+);
 
 // Graceful shutdown handling
 const shutdown = (sig) => {
   console.log(`${sig} received, shutting down gracefully...`);
   server.close(() => {
-    console.log('Server closed');
+    console.log("Server closed");
     process.exit(0);
   });
 };
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
