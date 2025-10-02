@@ -1,0 +1,14 @@
+{
+  "name": "geo-notes",
+  "version": "1.0.0",
+  "description": "GeoNotes Application",
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  },
+  "scripts": {
+    "start": "cd GEO_NOTES/backend && npm install && node server.js",
+    "heroku-postbuild": "cd GEO_NOTES/backend && npm install",
+    "dev": "cd GEO_NOTES/backend && npm install && node server.js"
+  }
+}
