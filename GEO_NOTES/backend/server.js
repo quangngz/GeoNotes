@@ -89,8 +89,21 @@ function ensureAuth(req, res, next) {
   res.status(401).json({ error: "Unauthorized" });
 }
 
-app.get("/config", ensureAuth, (req, res) => {
-  res.json({ apiUrl: process.env.GOOGLE_MAPS_API_KEY});
+// Google Geocoding API proxy endpoint
+app.get("/api/geocode", ensureAuth, async (req, res) => {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) return res.status(400).json({ error: "lat and lng are required" });
+
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    res.json(data);
+  } catch (e) {
+    console.error('Geocoding error:', e);
+    res.status(500).json({ error: "Failed to fetch geocoding data" });
+  }
 });
 
 // ----- Auth Routes -----

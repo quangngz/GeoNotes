@@ -27,7 +27,6 @@ let sharedOwnersById = new Map();
 
 // what I'm currently looking at
 let currentView = { type: "self", ownerId: null, role: "editor" };
-const GOOGLE_API_KEY = "AIzaSyBBUmA4z0sdQ_iRDGfClwXPZggthxMhhv0";
 
 
 let savedCustomLabels = []; // fetched from backend
@@ -189,8 +188,8 @@ window.initMap = function() {
 
 
 async function getCountryRegion(lat, lng) {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_API_KEY}`;
-    const response = await fetch(url);
+    const url = `${API_BASE_URL}/geocode?lat=${lat}&lng=${lng}`;
+    const response = await fetch(url, { credentials: 'same-origin' });
     const data = await response.json();
     let country = null, region = null, locationName = null;
     if (data.results && data.results.length > 0) {
